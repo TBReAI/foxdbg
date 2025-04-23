@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
+include(ExternalProject)
+
 if (MSVC)
 
     # cache things to speed up windows build
@@ -91,3 +93,18 @@ option(LWS_WITHOUT_TEST_CLIENT "Option" OFF)
 option(LWS_WITHOUT_TEST_PING "Option" OFF)
 
 add_subdirectory(libwebsockets)
+
+option(LWS_WITHOUT_TEST_PING "Option" OFF)
+
+ExternalProject_Add(libjpeg-turbo
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libjpeg-turbo
+    BINARY_DIR ${CMAKE_BINARY_DIR}/libjpeg-turbo-build
+    INSTALL_DIR ${CMAKE_BINARY_DIR}/libjpeg-turbo
+    CMAKE_ARGS
+        -DENABLE_SHARED=OFF
+        -DWITH_SIMD=ON
+        -DWITH_TURBOJPEG=ON
+
+    BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
+    INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --prefix <INSTALL_DIR>
+)

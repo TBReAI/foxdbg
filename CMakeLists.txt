@@ -25,13 +25,16 @@ target_include_directories(foxdbg PRIVATE
 )
 
 add_executable(foxdbg_test 
-    examples/c/main.c
+    examples/c/main.cpp
 )
 
 target_link_libraries(foxdbg_test PRIVATE
     foxdbg
+    ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/turbojpeg-static.lib
 )
 
 target_include_directories(foxdbg_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/libjpeg-turbo/src
 )
