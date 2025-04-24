@@ -8,7 +8,7 @@ add_subdirectory(extern)
 
 add_library(foxdbg STATIC
     lib/foxdbg.c
-    #lib/foxdbg_channels.c
+    lib/foxdbg_buffer.c
 
     lib/foxdbg_threadpool.cpp
     #lib/foxdbg_protocol.cpp

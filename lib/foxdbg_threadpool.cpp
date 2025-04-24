@@ -17,6 +17,7 @@
 
 #include "foxdbg.h"
 #include "foxdbg_threadpool.h"
+#include "foxdbg_buffer.h"
 
 #include <libwebsockets.h>
 #include <stdio.h>
@@ -50,15 +51,7 @@ static std::thread foxdbg_encoder_thread;
 
 static std::atomic_bool running(false);
 
-uint8_t tx_buffer[LARGE_BUFFER_SIZE]; /* 1MB tx buffer */
-static size_t tx_buffer_size = LARGE_BUFFER_SIZE;
-
-foxdbg_buffer_t buffer = {
-    tx_buffer,
-    tx_buffer_size,
-    false,
-    false
-};
+static foxdbg_buffer_t *buffer;
 
 /***************************************************************
 ** MARK: PUBLIC FUNCTIONS
@@ -67,6 +60,8 @@ foxdbg_buffer_t buffer = {
 void foxdbg_threadpool_init()
 {   
     running.store(true);
+
+    foxdbg_buffer_alloc(LARGE_BUFFER_SIZE, &buffer);
 
     foxdbg_server_thread = std::thread(foxdbg_server_thread_main);
     foxdbg_encoder_thread = std::thread(foxdbg_encoder_thread_main);
@@ -94,52 +89,48 @@ void foxdbg_threadpool_shutdown(void)
 ** MARK: STATIC FUNCTIONS
 ***************************************************************/
 
+int foxdbg_server_thread_main() {
+    while (running.load()) {
 
-int foxdbg_server_thread_main()
-{
+        // Check for incoming data
+        void* data = nullptr;
+        size_t size = 0;
 
-    while (running.load())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        printf("Server thread running...\n");
+        foxdbg_buffer_begin_read(buffer, &data, &size);
 
-        /* read from buffer */
-
-        if (buffer.read_lock == false)
-        {
-            buffer.read_lock = true;
-
-            uint64_t* data = (uint64_t*)buffer.data;
-            printf("Data: %llu\n", *data);
-
-            buffer.read_lock = false;
+        if (data != nullptr) {
+            uint64_t* data_ptr = (uint64_t*)data;
+            printf("Received data: %llu\n", *data_ptr);
         }
+
+        foxdbg_buffer_end_read(buffer);
     }
 
     printf("Server thread exiting...\n");
-
     return 0;
 }
 
-int foxdbg_encoder_thread_main()
-{
-    while (running.load())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        printf("Encoder thread running...\n");
+int foxdbg_encoder_thread_main() {
 
-        /* write to buffer */
-        if (buffer.write_lock == false)
-        {
-            buffer.write_lock = true;
+    while (running.load()) {
 
-            *((uint64_t*)buffer.data) =  *((uint64_t*)buffer.data) + 1;
+        static uint64_t counter = 0;
+        counter++;
 
-            buffer.write_lock = false;
+        void* data = nullptr;
+        size_t size = 0;
+
+        foxdbg_buffer_begin_write(buffer, &data, &size);
+
+        if (data != nullptr) {
+            uint64_t* data_ptr = (uint64_t*)data;
+            *data_ptr = counter;
         }
+
+        foxdbg_buffer_end_write(buffer);
+
     }
 
     printf("Encoder thread exiting...\n");
-
     return 0;
 }
