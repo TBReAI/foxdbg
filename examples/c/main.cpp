@@ -16,9 +16,6 @@
 using json = nlohmann::json;
 
 size_t encode_image_byte_array_to_buffer_optimized(uint8_t* tx_buffer, size_t tx_buffer_size, int width, int height, int components, const uint8_t* compressedImage, size_t compressedSize) {
-    LARGE_INTEGER start, end, frequency;
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
 
     // Estimate required buffer size (same as before)
     size_t estimated_json_overhead = 100; // A safe estimate
@@ -64,10 +61,6 @@ size_t encode_image_byte_array_to_buffer_optimized(uint8_t* tx_buffer, size_t tx
     buffer_ptr[bytes_written++] = '}';
     buffer_ptr[bytes_written] = '\0'; // Null terminate
 
-    QueryPerformanceCounter(&end);
-    double elapsed = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
-    int microseconds = (int)(elapsed * 1000000.0);
-    printf("TIME: %d us\n", microseconds);
 
     return bytes_written; // Return the actual size of the JSON data
 }
@@ -99,75 +92,101 @@ int main(int argc, char *argv[])
 
     int jpegQuality = 25;
 
-    /*
-    **  Small Image:
-    **  100: 2.28ms
-    **  50: 1.33ms
-    **  25: 0.919s
-    **
-    **  Example 1280x720 Image:
-    **  Compression time: 4.4ms
-    **  Size: 24KB vs 3.7MB
-    **  JSON Encode Time: 1.1ms vs 100ms
-    **  Buffer encode time: 5ms vs 580ms
-    */
+    #if 0
+    {
+        LARGE_INTEGER start, end, frequency;
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&start);
+
+        json image_data = {
+            {"width", width},
+            {"height", height},
+            {"channels", components},
+            {"encoding", "jpeg"},
+            {"data", json::array()}
+        };
+    
+        std::vector<uint8_t> blob(
+            (uint8_t*)img_file,
+            (uint8_t*)(img_file + width * height * components)
+        );
+    
+        image_data["data"] = std::move(blob);
+    
+        std::string json_str = image_data.dump();
+        size_t json_len = json_str.length();
+    
+        if (json_len > sizeof(tx_buffer) - 13)
+        {
+            fprintf(stderr, "JSON message too large\n");
+            return 0;
+        }
+    
+        memcpy(tx_buffer + 13, json_str.c_str(), json_len);
+    
+
+        QueryPerformanceCounter(&end);
+        double elapsed = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
+        int microseconds = (int)(elapsed * 1000000.0);
+        printf("TIME BEFORE: %d us\n", microseconds);
+
+    }
+    
+
+
+    {
+        LARGE_INTEGER start, end, frequency;
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&start);
+
+        /*
+        **  Small Image:
+        **  100: 2.28ms
+        **  50: 1.33ms
+        **  25: 0.919s
+        **
+        **  Example 1280x720 Image:
+        **  Compression time: 4.4ms
+        **  Size: 24KB vs 3.7MB
+        **  JSON Encode Time: 1.1ms vs 100ms
+        **  Buffer encode time: 5ms vs 580ms
+        */
+
+        
+        int result = tjCompress2(
+            jpegCompressor,
+            img_file,
+            width,
+            0, // Pitch
+            height,
+            pixelFormat,
+            &compressedImage,
+            &compressedSize,
+            jpegSubsamp,
+            jpegQuality,
+            TJFLAG_FASTDCT
+        );
+
+        size_t json_len = encode_image_byte_array_to_buffer_optimized(tx_buffer, TX_BUFFER_SIZE, width, height, components, compressedImage, compressedSize);
+
+        QueryPerformanceCounter(&end);
+        double elapsed = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
+        int microseconds = (int)(elapsed * 1000000.0);
+        printf("TIME AFTER: %d us\n", microseconds);
+
+        printf("JSON LEBNGTH: %lu\n", json_len);
+
+
+    }
+    #endif 
+
 
     
-    int result = tjCompress2(
-        jpegCompressor,
-        img_file,
-        width,
-        0, // Pitch
-        height,
-        pixelFormat,
-        &compressedImage,
-        &compressedSize,
-        jpegSubsamp,
-        jpegQuality,
-        TJFLAG_FASTDCT
-    );
-
-    LARGE_INTEGER start, end, frequency;
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
     
     printf("Image size: %d x %d, components: %d\n", width, height, components);
 
-    #if 0
-    json image_data = {
-        {"width", width},
-        {"height", height},
-        {"channels", components},
-        {"encoding", "jpeg"},
-        {"data", json::array()}
-    };
-
-    std::vector<uint8_t> blob(
-        (uint8_t*)compressedImage,
-        (uint8_t*)(compressedImage + compressedSize)
-    );
-
-    image_data["data"] = std::move(blob);
-
-    std::string json_str = image_data.dump();
-    size_t json_len = json_str.length();
-
-    if (json_len > sizeof(tx_buffer) - 13)
-    {
-        fprintf(stderr, "JSON message too large\n");
-        return 0;
-    }
-
-    memcpy(tx_buffer + 13, json_str.c_str(), json_len);
-    #endif
-
-    size_t json_len = encode_image_byte_array_to_buffer_optimized(tx_buffer, TX_BUFFER_SIZE, width, height, components, compressedImage, compressedSize);
-
-    QueryPerformanceCounter(&end);
-    double elapsed = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
-    int microseconds = (int)(elapsed * 1000000.0);
-    printf("TIME: %d us\n", microseconds);
-
+    
+    
 
     printf("Image size: %d x %d, components: %d\n", width, height, components);
 
@@ -177,9 +196,9 @@ int main(int argc, char *argv[])
     
     /* wait for user */
 
-    while (1)
+    //while (1)
     {
-        /*
+        
         foxdbg_image_t image = {
             width,
             height,
@@ -189,8 +208,10 @@ int main(int argc, char *argv[])
             compressedSize
         };
 
-        foxdbg_send_image_compressed(foxglove_topic_id, image);*/
+        //foxdbg_send_image_compressed(foxglove_topic_id, image);
     }
+
+    getchar();
 
     tjFree(compressedImage);
     tjDestroy(jpegCompressor);

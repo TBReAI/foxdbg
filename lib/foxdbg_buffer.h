@@ -2,7 +2,7 @@
 **
 ** TBReAI Header File
 **
-** File         :  foxdbg_thread.h
+** File         :  foxdbg_channel.h
 ** Module       :  foxdbg
 ** Author       :  SH
 ** Created      :  2025-04-14 (YYYY-MM-DD)
@@ -11,8 +11,8 @@
 **
 ***************************************************************/
 
-#ifndef FOXDBG_THREAD_H
-#define FOXDBG_THREAD_H
+#ifndef FOXDBG_BUFFER_H
+#define FOXDBG_BUFFER_H
 
 
 
@@ -28,27 +28,31 @@
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
+#define LARGE_BUFFER_SIZE (1024*1024) /* 1MB buffer */
+
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
 
+typedef struct
+{
+    void* data;
+    size_t size;
+    
+    volatile bool write_lock;
+    volatile bool read_lock;
+
+} foxdbg_buffer_t;
+
 /***************************************************************
 ** MARK: FUNCTION DEFS
 ***************************************************************/
-
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
-/* start FOXDBG thread */
-void foxdbg_thread_init(void);
-
-/* stop FOXDBG thread */
-void foxdbg_thread_shutdown(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FOXDBG_THREAD_H */
+#endif /* FOXDBG_CHANNEL_H */

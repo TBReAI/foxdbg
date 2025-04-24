@@ -2,7 +2,7 @@
 **
 ** TBReAI Header File
 **
-** File         :  foxdbg_concurrent.h
+** File         :  foxdbg_thread.h
 ** Module       :  foxdbg
 ** Author       :  SH
 ** Created      :  2025-04-14 (YYYY-MM-DD)
@@ -11,53 +11,22 @@
 **
 ***************************************************************/
 
-#ifndef FOXDBG_CONCURRENT_H
-#define FOXDBG_CONCURRENT_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+#ifndef FOXDBG_THREAD_H
+#define FOXDBG_THREAD_H
 
 /***************************************************************
 ** MARK: INCLUDES
 ***************************************************************/
 
-#ifdef _WIN32
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-#else
-    #include <stdint.h>
-#endif
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+
+#include "foxdbg_buffer.h"
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
-
-#ifdef _WIN32
-    typedef volatile LONG foxdbg_flag_t;
-
-    #define foxdbg_flag_set(pflag) \
-        InterlockedExchange((LONG*)(pflag), 1)
-
-    #define foxdbg_flag_clear(pflag) \
-        InterlockedExchange((LONG*)(pflag), 0)
-
-    #define foxdbg_flag_get(pflag) \
-        InterlockedCompareExchange((LONG*)(pflag), 0, 0)
-
-#else
-    typedef volatile int foxdbg_flag_t;
-
-    #define foxdbg_flag_set(pflag) \
-        __atomic_store_n((pflag), 1, __ATOMIC_SEQ_CST)
-
-    #define foxdbg_flag_clear(pflag) \
-        __atomic_store_n((pflag), 0, __ATOMIC_SEQ_CST)
-
-    #define foxdbg_flag_get(pflag) \
-        __atomic_load_n((pflag), __ATOMIC_SEQ_CST)
-#endif
 
 /***************************************************************
 ** MARK: TYPEDEFS
@@ -68,7 +37,18 @@ extern "C" {
 ***************************************************************/
 
 #ifdef __cplusplus
+extern "C" {
+#endif
+
+
+/* start FOXDBG thread pool */
+void foxdbg_threadpool_init(void);
+
+/* stop FOXDBG thread pool */
+void foxdbg_threadpool_shutdown(void);
+
+#ifdef __cplusplus
 }
 #endif
 
-#endif /* FOXDBG_CONCURRENT_H */
+#endif /* FOXDBG_THREAD_H */
