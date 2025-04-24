@@ -24,24 +24,29 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "foxdbg_buffer.h"
+
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
-#define LARGE_BUFFER_SIZE (1024*1024) /* 1MB buffer */
+#define LARGE_BUFFER_SIZE (10*1024*1024) /* 1MB buffer */
 
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
 
-typedef struct
+typedef struct 
 {
     float x;
     float y;
     float z;
-    float roll;
-    float pitch;
-    float yaw;
+} foxdbg_vector3_t;
+
+typedef struct 
+{
+    foxdbg_vector3_t position;
+    foxdbg_vector3_t orientation;
 } foxdbg_pose_t;
 
 typedef enum
@@ -56,41 +61,27 @@ typedef enum
     FOXDBG_CHANNEL_TYPE_BOOLEAN
 } foxdbg_channel_type_t;
 
-typedef struct 
-{
-    uint8_t buffer[LARGE_BUFFER_SIZE]; /* 1MB buffer */
-} foxdbg_large_channel_buffer_t;
-
 typedef struct
 {
-    union
-    {
-        foxdbg_pose_t pose_value;
-        float float_value;
-        int32_t int_value;
-        bool bool_value;
-    } data;
-} foxdbg_small_channel_buffer_t;
+    int width;
+    int height;
+    int channels;
+} foxdbg_image_info_t;
 
-typedef struct
+typedef struct foxdbg_channel_t
 {
-    void* raw_buffer_a;
-    void* raw_buffer_b;
+    const char *topic_name;
 
-    void* encoded_buffer_a;
-    void* encoded_buffer_b;
+    int channel_id;
+    int subscription_id;
 
-    void* raw_front;
-    void* raw_back;
-    size_t raw_size; 
+    foxdbg_channel_type_t channel_type;
 
-    void* encoded_front;
-    void* encoded_back;
-    size_t encoded_size;
+    foxdbg_buffer_t *raw_buffer;
+    foxdbg_buffer_t *encoded_buffer;
+    foxdbg_buffer_t *info_buffer;
 
-    volatile bool encoded_swap_ready; 
-    volatile size_t encoded_swap_complete; 
-    
+    struct foxdbg_channel_t *next;
 } foxdbg_channel_t;
 
 /***************************************************************

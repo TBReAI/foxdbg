@@ -38,17 +38,19 @@
 
 typedef struct
 {
-    size_t buffer_size;
+    size_t buffer_size;         /* allocated size */
 
     void* buffer_a;
     void* buffer_b;
 
     void* front_buffer;
+    size_t front_buffer_size;   /* populated size */
     void* back_buffer;
+    size_t back_buffer_size;    /* populated size */
     
-    volatile bool write_lock;
-    volatile bool read_lock;
-    volatile bool swap_lock;
+    volatile int write_lock;
+    volatile int read_lock;
+    volatile int swap_lock;
 
 } foxdbg_buffer_t;
 
@@ -63,10 +65,10 @@ extern "C" {
 
 bool foxdbg_buffer_alloc(size_t size, foxdbg_buffer_t **buffer);
 
-void foxdbg_buffer_begin_write(foxdbg_buffer_t* buffer, void **data, size_t *size);
-void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer);
+void foxdbg_buffer_begin_write(foxdbg_buffer_t* buffer, void **data, size_t *size); /* size here is allocated size (i.e available for writing )*/
+void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer, size_t populated_size);
 
-void foxdbg_buffer_begin_read(foxdbg_buffer_t* buffer, void **data, size_t *size);
+void foxdbg_buffer_begin_read(foxdbg_buffer_t* buffer, void **data, size_t *size); /* size here is populated size (i.e available for reading )*/
 void foxdbg_buffer_end_read(foxdbg_buffer_t* buffer);
 
 #ifdef __cplusplus

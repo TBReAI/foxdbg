@@ -11,16 +11,19 @@ add_library(foxdbg STATIC
     lib/foxdbg_buffer.c
 
     lib/foxdbg_threadpool.cpp
-    #lib/foxdbg_protocol.cpp
+    lib/foxdbg_protocol.cpp
+    lib/foxdbg_encoder.cpp
 )
 
 target_link_libraries(foxdbg PRIVATE
     websockets
+    ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/turbojpeg-static.lib
 )
 
 target_include_directories(foxdbg PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/libwebsockets/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/libjpeg-turbo/src
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
 
@@ -30,11 +33,9 @@ add_executable(foxdbg_test
 
 target_link_libraries(foxdbg_test PRIVATE
     foxdbg
-    ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/turbojpeg-static.lib
 )
 
 target_include_directories(foxdbg_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
-    ${CMAKE_CURRENT_SOURCE_DIR}/extern/libjpeg-turbo/src
 )

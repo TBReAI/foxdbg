@@ -2,7 +2,7 @@
 **
 ** TBReAI Header File
 **
-** File         :  foxdbg.h
+** File         :  foxdbg_protocol.h
 ** Module       :  foxdbg
 ** Author       :  SH
 ** Created      :  2025-04-14 (YYYY-MM-DD)
@@ -11,31 +11,28 @@
 **
 ***************************************************************/
 
-#ifndef FOXDBG_H
-#define FOXDBG_H
-
+#ifndef FOXDBG_PROTOCOL_HPP
+#define FOXDBG_PROTOCOL_HPP
 
 /***************************************************************
 ** MARK: INCLUDES
 ***************************************************************/
 
+#include "foxdbg_channel.h" 
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "foxdbg_channel.h"
+#include <libwebsockets.h>
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
-#define FOXDBG_PORT (8765U)
-#define FOXDBG_VHOST ("0.0.0.0")
-
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
-
 
 /***************************************************************
 ** MARK: FUNCTION DEFS
@@ -46,27 +43,18 @@ extern "C" {
 #endif
 
 
-/* initialise the foxglove server */
-void foxdbg_init(void);
+void foxdbg_protocol_init(lws_context *context, foxdbg_channel_t **channels, size_t *channel_count);
 
-/* poll for rx data callbacks */
-void foxdbg_update(void);
+void foxdbg_protocol_connect(lws *client);
 
-/* shutdown the system */
-void foxdbg_shutdown(void);
+void foxdbg_protocol_disconnect(lws *client);
 
-/* create a new channel */
-int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_type);
+void foxdbg_protocol_transmit_subscriptions(void);
 
-int foxdbg_get_channel(const char *topic_name);
-
-void foxdbg_write_channel(int channel_id, const void *data, size_t size);
-
-void foxdbg_write_channel_info(int channel_id, const void *data, size_t size);
-
+void foxdbg_protocol_receive(char* data, size_t len);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FOXDBG_H */
+#endif /* FOXDBG_PROTOCOL_HPP */

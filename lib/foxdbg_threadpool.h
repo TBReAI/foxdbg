@@ -42,7 +42,7 @@ extern "C" {
 
 
 /* start FOXDBG thread pool */
-void foxdbg_threadpool_init(void);
+void foxdbg_threadpool_init(foxdbg_channel_t **channels, size_t *channel_count);
 
 /* stop FOXDBG thread pool */
 void foxdbg_threadpool_shutdown(void);

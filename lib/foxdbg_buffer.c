@@ -16,6 +16,7 @@
 ***************************************************************/
 
 #include "foxdbg_buffer.h"
+#include "foxdbg_atomic.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,16 +26,6 @@
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
-
-#if defined(_MSC_VER)
-    #include <windows.h>
-    #define YIELD_CPU() Sleep(0)
-#elif defined(__GNUC__) || defined(__clang__)
-    #include <sched.h>
-    #define YIELD_CPU() sched_yield()
-#else
-    #error "Unsupported compiler - implement atomic operations for your compiler"
-#endif
 
 /***************************************************************
 ** MARK: TYPEDEFS
@@ -80,12 +71,17 @@ bool foxdbg_buffer_alloc(size_t size, foxdbg_buffer_t **buffer)
         return false;
     }
 
+    //printf("Allocated buffer %p (%zu bytes)\n", buf->buffer_a, size);
+    //printf("Allocated buffer %p (%zu bytes)\n", buf->buffer_b, size);
+
     buf->front_buffer = buf->buffer_a;
     buf->back_buffer = buf->buffer_b;
+    buf->front_buffer_size = 0;
+    buf->back_buffer_size = 0;
 
-    buf->write_lock = false;
-    buf->read_lock = false;
-    buf->swap_lock = false;
+    buf->write_lock = 0;
+    buf->read_lock = 0;
+    buf->swap_lock = 0;
 
     *buffer = buf;
 
@@ -94,43 +90,56 @@ bool foxdbg_buffer_alloc(size_t size, foxdbg_buffer_t **buffer)
 
 void foxdbg_buffer_begin_write(foxdbg_buffer_t* buffer, void **data, size_t *size)
 {
-    while (buffer->swap_lock)
+    while (ATOMIC_READ_INT(&buffer->swap_lock))
     {
         /* wait for lock */
         YIELD_CPU();
     }
 
-    buffer->write_lock = true;
+    ATOMIC_WRITE_INT(&buffer->write_lock, 1);
 
     *data = buffer->back_buffer;
     *size = buffer->buffer_size;
+
+    //printf("BEGAN WRITE %p\n", buffer->back_buffer);
+
 }
 
-void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer)
+void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer, size_t populated_size)
 {
-    buffer->write_lock = false;
+    buffer->back_buffer_size = populated_size;
+
+    //printf("ENDED WRITE %p\n", buffer->back_buffer);
+
+    ATOMIC_WRITE_INT(&buffer->write_lock, 0);
 
     swap_buffers(buffer);
 }
 
 void foxdbg_buffer_begin_read(foxdbg_buffer_t* buffer, void **data, size_t *size)
 {
-    while (buffer->swap_lock)
+
+    while (ATOMIC_READ_INT(&buffer->swap_lock))
     {
         /* wait for lock */
         YIELD_CPU();
     }
 
-    buffer->read_lock = true;
+    ATOMIC_WRITE_INT(&buffer->read_lock, 1);
+
+    //printf("BEGAN READ %p\n", buffer->front_buffer);
 
     *data = buffer->front_buffer;
-    *size = buffer->buffer_size;
+    *size = buffer->front_buffer_size;
 
+    //printf("Buffer %p front size: %zu\n", buffer->front_buffer, buffer->front_buffer_size);
 }
 
 void foxdbg_buffer_end_read(foxdbg_buffer_t* buffer)
 {
-    buffer->read_lock = false;
+    //printf("ENDED READ %p\n", buffer->front_buffer);
+
+    ATOMIC_WRITE_INT(&buffer->read_lock, 0);
 }
 
 
@@ -140,16 +149,33 @@ void foxdbg_buffer_end_read(foxdbg_buffer_t* buffer)
 
 static void swap_buffers(foxdbg_buffer_t* buffer)
 {
-    while (buffer->read_lock || buffer->write_lock) {
+    /* First check if we need to wait for readers or writers */
+    while (ATOMIC_READ_INT(&buffer->read_lock) || ATOMIC_READ_INT(&buffer->write_lock)) 
+    {
         /* wait for lock */
         YIELD_CPU();
     }
 
-    buffer->swap_lock = true;
+    /* Now set swap lock to prevent new reads/writes */
+    ATOMIC_WRITE_INT(&buffer->swap_lock, 1);
 
+    /* Double check locks again (since there was a small window) */
+    while (ATOMIC_READ_INT(&buffer->read_lock) || ATOMIC_READ_INT(&buffer->write_lock)) 
+    {
+        /* wait again to be safe */
+        YIELD_CPU();
+    }
+
+    /* Now safe to swap */
     void* tmp = buffer->front_buffer;
     buffer->front_buffer = buffer->back_buffer;
     buffer->back_buffer = tmp;
 
-    buffer->swap_lock = false;
+    size_t tmp_size = buffer->front_buffer_size;
+    buffer->front_buffer_size = buffer->back_buffer_size;
+    buffer->back_buffer_size = tmp_size;
+
+    //printf("SWAPPED %p <-> %p\n", buffer->front_buffer, buffer->back_buffer);
+
+    ATOMIC_WRITE_INT(&buffer->swap_lock, 0);
 }

@@ -1,0 +1,423 @@
+/***************************************************************
+**
+** TBReAI Source File
+**
+** File         :  foxdbg_channels.c
+** Module       :  foxdbg
+** Author       :  SH
+** Created      :  2025-04-14 (YYYY-MM-DD)
+** License      :  MIT
+** Description  :  Foxglove Debug Server
+**
+***************************************************************/
+
+/***************************************************************
+** MARK: INCLUDES
+***************************************************************/
+
+#include "foxdbg.h"
+#include "foxdbg_protocol.h"
+#include "foxdbg_atomic.h"
+
+#include <sstream>
+#include <chrono>
+
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <json/json.hpp>
+
+using json = nlohmann::json;
+
+/***************************************************************
+** MARK: CONSTANTS & MACROS
+***************************************************************/
+
+/***************************************************************
+** MARK: TYPEDEFS
+***************************************************************/
+
+/***************************************************************
+** MARK: STATIC FUNCTION DEFS
+***************************************************************/
+
+static void send_json(json data);
+
+static void send_server_info(void);
+static void send_advertise(void);
+
+/***************************************************************
+** MARK: STATIC VARIABLES
+***************************************************************/
+
+static uint8_t tx_buffer[1024*1024]; /* 1MB tx buffer */
+
+static struct lws_context *context = NULL;
+static struct lws *client = NULL;
+
+static foxdbg_channel_t **channels = NULL;
+static size_t *channel_count = 0;
+
+/***************************************************************
+** MARK: PUBLIC FUNCTIONS
+***************************************************************/
+
+void foxdbg_protocol_init(lws_context *context_ptr, foxdbg_channel_t **channels_ptr, size_t *channel_count_ptr)
+{
+    context = context_ptr;
+    channels = channels_ptr;
+    channel_count = channel_count_ptr;
+}
+
+void foxdbg_protocol_connect(lws *client_ptr)
+{
+    if (client)
+    {
+        foxdbg_protocol_disconnect(client);
+    }
+
+    client = client_ptr;
+
+    send_server_info();
+    send_advertise();
+}
+
+void foxdbg_protocol_disconnect(lws *client_ptr)
+{
+    client = NULL;
+
+    foxdbg_channel_t *current = *channels;
+
+    while (current)
+    {
+        ATOMIC_WRITE_INT(&current->subscription_id, -1);
+        current = current->next;
+    }
+}
+
+void foxdbg_protocol_receive(char* data, size_t len)
+{
+    if (len < 1)
+    {
+        fprintf(stderr, "Invalid data length\n");
+        return;
+    }
+
+    if (data[0] == 0x01)
+    {
+        /* handle binary data */
+        //receive_data(data, len);
+        return;
+    }
+
+    json json_object = json::parse((char *)data, (char *)data + len);
+
+    if (!json_object.is_object() || !json_object.contains("op"))
+    {
+        fprintf(stderr, "Invalid JSON message\n");
+        return;
+    }
+    else if (json_object["op"] == "subscribe")
+    {
+        if (json_object.contains("subscriptions"))
+        {
+            for (auto& subscription : json_object["subscriptions"])
+            {
+                try {
+
+                    int subscription_id = subscription["id"].get<int>();
+                    int channel_id = subscription["channelId"].get<int>();
+
+                    foxdbg_channel_t *channel = *channels;
+
+                    while (channel)
+                    {
+                        if (channel->channel_id == channel_id)
+                        {
+                            ATOMIC_WRITE_INT(&channel->subscription_id, subscription_id);
+                            printf("FOXDBG: Client subscribed to %s\n", channel->topic_name);
+                            return;
+                        }
+                        channel = channel->next;
+                    }
+                }
+                catch (...)
+                {
+                    /* JSON error */
+                }
+            }
+        }
+    }
+    else if (json_object["op"] == "unsubscribe")
+    {
+        if (json_object.contains("subscriptionIds"))
+        {
+            for (auto& subscription_id : json_object["subscriptionIds"])
+            {
+                try {
+
+                    int subscription_id_int = subscription_id.get<int>();
+                    
+                    foxdbg_channel_t *channel = *channels;
+
+                    while (channel)
+                    {
+                        if (ATOMIC_READ_INT(&channel->subscription_id) == subscription_id_int)
+                        {
+                            printf("FOXDBG: Client unsubscribed from %s\n", channel->topic_name);
+                            ATOMIC_WRITE_INT(&channel->subscription_id, -1);
+                            return;
+                        }
+                        channel = channel->next;
+                    }
+
+                }
+                catch (...)
+                {
+                    /* JSON error */
+                }
+
+                
+            }
+        }
+    }
+    else if (json_object["op"] == "advertise")
+    {
+        //printf("FOXDBG: RX advertise\n");
+        //receive_advertise(json_object);
+    }
+    else if (json_object["op"] == "unadvertise")
+    {
+        //printf("FOXDBG: RX unadvertise\n");
+        //receive_unadvertise(json_object);
+    }
+    else
+    {
+        //printf("FOXDBG: RX %s\n", json_object.dump().c_str());
+    }
+
+}
+
+void foxdbg_protocol_transmit_subscriptions(void)
+{
+    foxdbg_channel_t *current = *channels;
+
+    while (current)
+    {   
+        int subscription_id = ATOMIC_READ_INT(&current->subscription_id);
+
+        if (subscription_id >= 0)
+        {
+            uint8_t *data;
+            size_t data_size;
+            foxdbg_buffer_begin_read(current->encoded_buffer, (void**)&data, &data_size);
+
+            // Header setup
+            uint8_t* buf = data + LWS_PRE;
+            buf[0] = 0x01;
+            buf[1] =  static_cast<uint8_t>( subscription_id       & 0xFF);
+            buf[2] =  static_cast<uint8_t>((subscription_id >>  8) & 0xFF);
+            buf[3] =  static_cast<uint8_t>((subscription_id >> 16) & 0xFF);
+            buf[4] =  static_cast<uint8_t>((subscription_id >> 24) & 0xFF);
+
+            uint64_t nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+
+            for (int i = 0; i < 8; ++i)
+            {
+                buf[5 + i] = static_cast<uint8_t>((nsec >> (8 * i)) & 0xFF);
+            }
+
+            lws_write(client, (uint8_t*)data + LWS_PRE, data_size - LWS_PRE, LWS_WRITE_BINARY);
+           
+            foxdbg_buffer_end_read(current->encoded_buffer);
+            
+        }
+
+        current = current->next;
+    }
+}
+
+/***************************************************************
+** MARK: STATIC FUNCTIONS
+***************************************************************/
+
+static void send_json(json data)
+{
+
+    if (!client)
+    {
+        fprintf(stderr, "Client not connected\n");
+        return;
+    }
+
+    std::string json_str = data.dump();
+    size_t json_len = json_str.length();
+
+    if (json_len > sizeof(tx_buffer) - LWS_PRE)
+    {
+        fprintf(stderr, "JSON message too large\n");
+        return;
+    }
+
+    memcpy(tx_buffer + LWS_PRE, json_str.c_str(), json_len);
+
+    lws_write(client, tx_buffer + LWS_PRE, json_len, LWS_WRITE_TEXT);
+
+    printf("Sent JSON: %s\n", json_str.c_str());
+
+}
+
+
+static void send_server_info(void)
+{
+    json server_info = {
+        {"op", "serverInfo"},
+        {"name", "TBReAI FOXDBG"},
+        {"capabilities", {"clientPublish"}},
+        {"supportedEncodings", {"json", "binary"}},
+        {"metadata", json::object()}
+    };
+
+    send_json(server_info);
+}
+
+static void send_advertise(void)
+{
+    json channels_info = {
+        {"op", "advertise"},
+        {"channels", json::array()}
+    };
+
+    foxdbg_channel_t *current = *channels;
+
+    while (current)
+    {
+
+        std::string channel_schema;
+
+        switch (current->channel_type)
+        {
+            case FOXDBG_CHANNEL_TYPE_IMAGE:
+            {
+                channel_schema = "foxglove.CompressedImage";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_POINTCLOUD:
+            {
+                channel_schema = "foxglove.PointCloud";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_CUBES:
+            {
+                channel_schema = "foxglove.SceneUpdate";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_LINES:
+            {
+                channel_schema = "foxglove.SceneUpdate";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_POSE:
+            {
+                channel_schema = "foxglove.SceneUpdate";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_FLOAT:
+            {
+                channel_schema = "foxdbg.Float";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_INTEGER:
+            {
+                channel_schema = "foxdbg.Integer";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_BOOLEAN:
+            {
+                channel_schema = "foxdbg.Boolean";
+            } break;
+
+            default:
+            {
+                channel_schema = "foxglove.Unknown";
+            } break;
+        }
+
+        json channel_info = {
+            {"id", current->channel_id},
+            {"topic", current->topic_name},
+            {"encoding", "json"},
+            {"schemaName", channel_schema},
+            {"schema", json::string_t()}
+        };
+
+        switch (current->channel_type)
+        {
+            case FOXDBG_CHANNEL_TYPE_FLOAT:
+            {
+                json custom_schema = {
+                    {"title", "foxdbg.Float"},
+                    {"description", "float value"},
+                    {"type", "object"},
+                    {"properties", {
+                        {"value", {
+                            {"type", "number"},
+                            {"description", "float value"}
+                        }}
+                    }}
+                };
+    
+                channel_info["schema"] = custom_schema.dump();
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_INTEGER:
+            {
+                json custom_schema = {
+                    {"title", "foxdbg.Integer"},
+                    {"description", "float value"},
+                    {"type", "object"},
+                    {"properties", {
+                        {"value", {
+                            {"type", "integer"},
+                            {"description", "int value"}
+                        }}
+                    }}
+                };
+    
+                channel_info["schema"] = custom_schema.dump();
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_BOOLEAN:
+            {
+                json custom_schema = {
+                    {"title", "foxdbg.Boolean"},
+                    {"description", "bool value"},
+                    {"type", "object"},
+                    {"properties", {
+                        {"value", {
+                            {"type", "boolean"},
+                            {"description", "bool value"}
+                        }}
+                    }}
+                };
+    
+                channel_info["schema"] = custom_schema.dump();
+            } break;
+
+
+            default:
+            {
+                /* no custom schema */
+            } break;
+        }
+
+        channels_info["channels"].push_back(channel_info);
+
+        current = current->next;
+    }
+
+    send_json(channels_info);
+}

@@ -2,18 +2,17 @@
 **
 ** TBReAI Header File
 **
-** File         :  foxdbg.h
+** File         :  foxdbg_encoder.h
 ** Module       :  foxdbg
 ** Author       :  SH
-** Created      :  2025-04-14 (YYYY-MM-DD)
+** Created      :  2025-04-24 (YYYY-MM-DD)
 ** License      :  MIT
 ** Description  :  Foxglove Debug Server
 **
 ***************************************************************/
 
-#ifndef FOXDBG_H
-#define FOXDBG_H
-
+#ifndef FOXDBG_ENCODER_H
+#define FOXDBG_ENCODER_H
 
 /***************************************************************
 ** MARK: INCLUDES
@@ -28,14 +27,9 @@
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
-
-#define FOXDBG_PORT (8765U)
-#define FOXDBG_VHOST ("0.0.0.0")
-
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
-
 
 /***************************************************************
 ** MARK: FUNCTION DEFS
@@ -45,28 +39,14 @@
 extern "C" {
 #endif
 
+void foxdbg_encoder_init(void);
 
-/* initialise the foxglove server */
-void foxdbg_init(void);
+void foxdbg_encoder_shutdown(void);
 
-/* poll for rx data callbacks */
-void foxdbg_update(void);
-
-/* shutdown the system */
-void foxdbg_shutdown(void);
-
-/* create a new channel */
-int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_type);
-
-int foxdbg_get_channel(const char *topic_name);
-
-void foxdbg_write_channel(int channel_id, const void *data, size_t size);
-
-void foxdbg_write_channel_info(int channel_id, const void *data, size_t size);
-
+void foxdbg_encode_channel(foxdbg_channel_t *channel);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FOXDBG_H */
+#endif /* FOXDBG_ENCODER_H */
