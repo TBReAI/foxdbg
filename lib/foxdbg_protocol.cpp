@@ -564,7 +564,7 @@ static void send_image(foxdbg_channel_t *channel)
     size_t data_size;
     foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
 
-    if (data_size <= sizeof(raw_data_buffer))
+    if (data_size <= sizeof(raw_data_buffer) && data_size > 0)
     {
         memcpy(raw_data_buffer, data, data_size);
         foxdbg_buffer_end_read(channel->data_buffer);
