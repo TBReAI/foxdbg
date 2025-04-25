@@ -6,6 +6,8 @@ project(foxdbg)
 
 add_subdirectory(extern)
 
+option(FOXDBG_BUILD_TESTS "Build tests" OFF)
+
 add_library(foxdbg STATIC
     lib/foxdbg.c
     lib/foxdbg_buffer.c
@@ -26,15 +28,17 @@ target_include_directories(foxdbg PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
 
-add_executable(foxdbg_test 
-    examples/c/main.cpp
-)
+if (FOXDBG_BUILD_TESTS)
+    add_executable(foxdbg_test 
+        examples/c/main.cpp
+    )
 
-target_link_libraries(foxdbg_test PRIVATE
-    foxdbg
-)
+    target_link_libraries(foxdbg_test PRIVATE
+        foxdbg
+    )
 
-target_include_directories(foxdbg_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib
-    ${CMAKE_CURRENT_SOURCE_DIR}/extern
-)
+    target_include_directories(foxdbg_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern
+    )
+endif()

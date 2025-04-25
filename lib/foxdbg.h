@@ -60,6 +60,10 @@ int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_typ
 
 int foxdbg_get_channel(const char *topic_name);
 
+int foxdbg_add_rx_channel(const char *topic_name, foxdbg_channel_type_t channel_type);
+
+int foxdbg_get_rx_channel(const char *topic_name);
+
 void foxdbg_write_channel(int channel_id, const void *data, size_t size);
 
 void foxdbg_write_channel_info(int channel_id, const void *data, size_t size);

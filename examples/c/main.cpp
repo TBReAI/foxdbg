@@ -43,9 +43,11 @@ int main(int argc, char *argv[])
     int channel_id = foxdbg_add_channel("/sensors/banana", FOXDBG_CHANNEL_TYPE_IMAGE, 30);   
     int channel_id2 = foxdbg_add_channel("/sensors/banana2", FOXDBG_CHANNEL_TYPE_IMAGE, 30);
 
-    int channel_id3 = foxdbg_add_channel("/waves/sin", FOXDBG_CHANNEL_TYPE_FLOAT, 50);
-    int channel_id4 = foxdbg_add_channel("/waves/bool", FOXDBG_CHANNEL_TYPE_BOOLEAN, 50);
-    int channel_id5 = foxdbg_add_channel("/waves/int", FOXDBG_CHANNEL_TYPE_INTEGER, 50);
+    int channel_id3 = foxdbg_add_channel("/waves/sin", FOXDBG_CHANNEL_TYPE_FLOAT, 30);
+    int channel_id4 = foxdbg_add_channel("/waves/bool", FOXDBG_CHANNEL_TYPE_BOOLEAN, 30);
+    int channel_id5 = foxdbg_add_channel("/waves/int", FOXDBG_CHANNEL_TYPE_INTEGER, 30);
+
+    int rx_channel = foxdbg_add_rx_channel("/rx/system_state", FOXDBG_CHANNEL_TYPE_BOOLEAN);
 
     int width, height, channels;
 
@@ -83,7 +85,7 @@ int main(int argc, char *argv[])
 
         QueryPerformanceCounter(&start);
 
-        float sin_value = sinf((float)start.QuadPart / (float)frequency.QuadPart * 2.0f * 3.14159f * 1.0f);
+        float sin_value = sinf((float)start.QuadPart / (float)frequency.QuadPart * 2.0f * 3.14159f * 0.1f);
         foxdbg_write_channel(channel_id3, &sin_value, sizeof(sin_value));
 
         bool is_true = (sin_value > 0.0f);

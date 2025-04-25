@@ -42,6 +42,9 @@
 static foxdbg_channel_t *channels = NULL;
 static size_t channel_count = 0;
 
+static foxdbg_channel_t *rx_channels = NULL;
+static size_t rx_channel_count = 0;
+
 /***************************************************************
 ** MARK: PUBLIC FUNCTIONS
 ***************************************************************/
@@ -50,6 +53,9 @@ void foxdbg_init()
 {
     channels = NULL;
     channel_count = 0;
+
+    rx_channels = NULL;
+    rx_channel_count = 0;
 
     foxdbg_thread_init(&channels, &channel_count);
 }
@@ -174,6 +180,97 @@ int foxdbg_get_channel(const char *topic_name)
 
     return -1; /* Channel not found */
 }
+
+int foxdbg_add_rx_channel(const char *topic_name, foxdbg_channel_type_t channel_type)
+{
+    size_t payload_size = 0;
+    size_t info_size = 0;
+
+    switch (channel_type)
+    {
+        case FOXDBG_CHANNEL_TYPE_FLOAT:
+        {
+            payload_size = sizeof(float);
+        } break;
+
+        case FOXDBG_CHANNEL_TYPE_INTEGER:
+        {
+            payload_size = sizeof(int);
+        } break;
+    
+        case FOXDBG_CHANNEL_TYPE_BOOLEAN:
+        {
+            payload_size = sizeof(bool);
+        } break;
+
+        default:
+        {
+            return -1; /* Invalid channel type */
+        } break;
+    }
+
+    foxdbg_buffer_t *data_buffer;
+    if (!foxdbg_buffer_alloc(payload_size, &data_buffer))
+    {
+        return -1; /* Failed to allocate buffers */
+    }
+
+    foxdbg_channel_t *new_channel = malloc(sizeof(foxdbg_channel_t));
+    if (!new_channel)
+    {
+        return -1; /* Failed to allocate channel */
+    }
+    new_channel->topic_name = topic_name;
+    new_channel->target_tx_time = 0;
+    new_channel->last_tx_time = 0;
+
+    printf("Adding channel %s with target tx time %llu\n", topic_name, new_channel->target_tx_time);
+
+    new_channel->channel_type = channel_type;
+    new_channel->data_buffer = data_buffer;
+    new_channel->info_buffer = NULL;
+    new_channel->subscription_id = -1;
+    new_channel->channel_id = rx_channel_count;
+    new_channel->next = NULL;
+
+    foxdbg_channel_t *current = rx_channels;
+
+    while (current && current->next)
+    {
+        current = current->next;
+    }
+
+    if (current)
+    {
+        current->next = new_channel;
+    }
+    else
+    {
+        rx_channels = new_channel;
+    }
+
+    rx_channel_count++;
+
+    return new_channel->channel_id;
+}
+
+int foxdbg_get_rx_channel(const char *topic_name)
+{
+    foxdbg_channel_t *current = rx_channels;
+
+    while (current)
+    {
+        if (strcmp(current->topic_name, topic_name) == 0)
+        {
+            return current->channel_id;
+        }
+        
+        current = current->next;
+    }
+
+    return -1; /* Channel not found */
+}
+
 
 void foxdbg_write_channel(int channel_id, const void *data, size_t size)
 {

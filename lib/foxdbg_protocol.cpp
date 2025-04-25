@@ -280,11 +280,6 @@ void foxdbg_protocol_transmit_subscriptions(void)
         uint64_t last_time = current->last_tx_time;
         uint64_t elapsed = current_time - last_time;
 
-        if (elapsed > current->target_tx_time)
-        {
-            current->last_tx_time = current_time;
-        }
-
         if (subscription_id >= 0 && elapsed > current->target_tx_time)
         {
             switch (current->channel_type)
@@ -334,6 +329,11 @@ void foxdbg_protocol_transmit_subscriptions(void)
 
                 } break;
             }
+        }
+
+        if (elapsed > current->target_tx_time)
+        {
+            current->last_tx_time = current_timestamp_ms();
         }
 
         current = current->next;
