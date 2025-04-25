@@ -91,10 +91,18 @@ void foxdbg_thread_shutdown(void)
 
     running.store(false);
 
-    if (foxdbg_server_thread.joinable())
+    try
     {
-        foxdbg_server_thread.join();
+        if (foxdbg_server_thread.joinable())
+        {
+            foxdbg_server_thread.join();
+        }
     }
+    catch (...)
+    {
+        /* thread error */
+    }
+    
 }
 
 /***************************************************************

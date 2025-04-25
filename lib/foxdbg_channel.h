@@ -36,6 +36,14 @@
 ** MARK: TYPEDEFS
 ***************************************************************/
 
+typedef struct
+{
+    float r;
+    float g;
+    float b;
+    float a;
+} foxdbg_color_t;
+
 typedef struct 
 {
     float x;
@@ -45,9 +53,24 @@ typedef struct
 
 typedef struct 
 {
+    float x;
+    float y;
+    float z;
+    float w;
+} foxdbg_vector4_t;
+
+typedef struct 
+{
     foxdbg_vector3_t position;
     foxdbg_vector3_t orientation;
 } foxdbg_pose_t;
+
+typedef struct 
+{
+    foxdbg_vector3_t position;
+    foxdbg_vector3_t size;
+    foxdbg_color_t color;
+} foxdbg_cube_t;
 
 typedef enum
 {

@@ -21,6 +21,7 @@
 
 #include <sstream>
 #include <chrono>
+#include <vector>
 
 #include <string.h>
 #include <stdio.h>
@@ -72,6 +73,8 @@ static void send_server_info(void);
 static void send_advertise(void);
 
 static void send_image(foxdbg_channel_t *channel);
+static void send_pointcloud(foxdbg_channel_t *channel);
+static void send_cubes(foxdbg_channel_t *channel);
 static void send_float(foxdbg_channel_t *channel);
 static void send_integer(foxdbg_channel_t *channel);
 static void send_bool(foxdbg_channel_t *channel);
@@ -291,12 +294,12 @@ void foxdbg_protocol_transmit_subscriptions(void)
 
                 case FOXDBG_CHANNEL_TYPE_POINTCLOUD:
                 {
-                    //encode_pointcloud(current);
+                    send_pointcloud(current);
                 } break;
 
                 case FOXDBG_CHANNEL_TYPE_CUBES:
                 {
-                    //encode_cubes(current);
+                    send_cubes(current);
                 } break;
 
                 case FOXDBG_CHANNEL_TYPE_LINES:
@@ -658,6 +661,155 @@ static void send_image(foxdbg_channel_t *channel)
 
 
     tjFree(compressedImage);
+}
+
+static void send_pointcloud(foxdbg_channel_t *channel)
+{
+    void *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(raw_data_buffer) && data_size > 0 && data_size % sizeof(foxdbg_vector4_t) == 0)
+    {
+        memcpy(raw_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    
+    json j;
+    j["timestamp"]["sec"] = 0;
+    j["timestamp"]["nsec"] = 0;
+    
+    j["frame_id"] = "world";
+    
+    j["pose"]["position"] = {
+        {"x", 0.0},
+        {"y", 0.0},
+        {"z", 0.6}
+    };
+    
+    j["pose"]["orientation"] = {
+        {"x", 0.0},
+        {"y", 0.0},
+        {"z", 0.0},
+        {"w", 1.0}
+    };
+    
+    j["point_stride"] = sizeof(foxdbg_vector4_t);
+    
+    j["fields"] = {
+        {{"name", "x"}, {"offset", 0}, {"type", 7}},
+        {{"name", "y"}, {"offset", 4}, {"type", 7}},
+        {{"name", "z"}, {"offset", 8}, {"type", 7}},
+        {{"name", "intensity"}, {"offset", 12}, {"type", 7}}
+    };
+    
+    // Insert raw byte data into JSON array
+    j["data"] = std::vector<uint8_t>((uint8_t*)data, (uint8_t*)data + data_size);
+
+    std::string jsonStr = j.dump();
+
+    if (tx_buffer_size >= (jsonStr.size() + LWS_PRE + 13))
+    {
+        memcpy((uint8_t*)tx_buffer + LWS_PRE + 13, jsonStr.c_str(), jsonStr.size());
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            jsonStr.size() + 13,
+            subscription_id
+        );
+    }
+}
+
+static void send_cubes(foxdbg_channel_t *channel)
+{
+    void *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(raw_data_buffer) && data_size > 0 && data_size % sizeof(foxdbg_cube_t) == 0)
+    {
+        memcpy(raw_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    json j;
+    j["entities"] = json::array();
+
+    json entity;
+    entity["frame_id"] = "world";
+    entity["id"] = channel->topic_name;
+    entity["timestamp"] = {
+        {"sec", 0},
+        {"nsec", 0}
+    };
+
+    size_t numCubes = data_size / sizeof(foxdbg_cube_t);
+    foxdbg_cube_t *cubes = (foxdbg_cube_t*)raw_data_buffer;
+
+    for (size_t i = 0; i < numCubes; ++i)
+    {
+
+        foxdbg_cube_t cube = cubes[i];
+
+        json cube_object;
+
+        cube_object["pose"]["position"] = {
+            {"x", cube.position.x},
+            {"y", cube.position.y},
+            {"z", cube.position.z}
+        };
+        cube_object["pose"]["orientation"] = {
+            {"x", 0.0f}, {"y", 0.0f}, {"z", 0.0f}, {"w", 1.0f}
+        };
+        cube_object["size"] = {
+            {"x", cube.size.x},
+            {"y", cube.size.y},
+            {"z", cube.size.z}
+        };
+
+        // Color mapping
+        foxdbg_color_t color = cube.color;
+        cube_object["color"] = {
+            {"r", color.r},
+            {"g", color.g},
+            {"b", color.b},
+            {"a", color.a}
+        };
+
+        entity["cubes"].push_back(cube_object);
+    }
+
+    j["entities"].push_back(entity);
+
+    std::string jsonStr = j.dump();
+
+    if (tx_buffer_size >= (jsonStr.size() + LWS_PRE + 13))
+    {
+        memcpy((uint8_t*)tx_buffer + LWS_PRE + 13, jsonStr.c_str(), jsonStr.size());
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            jsonStr.size() + 13,
+            subscription_id
+        );
+    }
 }
 
 static void send_float(foxdbg_channel_t *channel)
