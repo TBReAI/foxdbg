@@ -2,17 +2,17 @@
 **
 ** TBReAI Header File
 **
-** File         :  foxdbg_encoder.h
+** File         :  foxdbg_thread.h
 ** Module       :  foxdbg
 ** Author       :  SH
-** Created      :  2025-04-24 (YYYY-MM-DD)
+** Created      :  2025-04-14 (YYYY-MM-DD)
 ** License      :  MIT
 ** Description  :  Foxglove Debug Server
 **
 ***************************************************************/
 
-#ifndef FOXDBG_ENCODER_H
-#define FOXDBG_ENCODER_H
+#ifndef FOXDBG_THREAD_H
+#define FOXDBG_THREAD_H
 
 /***************************************************************
 ** MARK: INCLUDES
@@ -22,11 +22,12 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "foxdbg_channel.h"
+#include "foxdbg_buffer.h"
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
+
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
@@ -39,14 +40,15 @@
 extern "C" {
 #endif
 
-void foxdbg_encoder_init(void);
 
-void foxdbg_encoder_shutdown(void);
+/* start FOXDBG thread pool */
+void foxdbg_thread_init(foxdbg_channel_t **channels, size_t *channel_count);
 
-void foxdbg_encode_channel(foxdbg_channel_t *channel);
+/* stop FOXDBG thread pool */
+void foxdbg_thread_shutdown(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FOXDBG_ENCODER_H */
+#endif /* FOXDBG_THREAD_H */

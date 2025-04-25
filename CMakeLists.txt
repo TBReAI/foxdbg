@@ -10,9 +10,8 @@ add_library(foxdbg STATIC
     lib/foxdbg.c
     lib/foxdbg_buffer.c
 
-    lib/foxdbg_threadpool.cpp
+    lib/foxdbg_thread.cpp
     lib/foxdbg_protocol.cpp
-    lib/foxdbg_encoder.cpp
 )
 
 target_link_libraries(foxdbg PRIVATE

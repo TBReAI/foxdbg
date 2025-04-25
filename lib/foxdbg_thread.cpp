@@ -18,11 +18,10 @@
 #include "foxdbg_atomic.h"
 
 #include "foxdbg.h"
-#include "foxdbg_threadpool.h"
+#include "foxdbg_thread.h"
 #include "foxdbg_buffer.h"
 
 #include "foxdbg_protocol.h"
-#include "foxdbg_encoder.h"
 
 #include <libwebsockets.h>
 #include <stdio.h>
@@ -67,7 +66,6 @@ static struct lws_protocols protocols[] = {
 static struct lws_context *context = NULL;
 
 static std::thread foxdbg_server_thread;
-static std::thread foxdbg_encoder_thread;
 
 static std::atomic_bool running(false);
 
@@ -78,7 +76,7 @@ static size_t *channel_count = NULL;
 ** MARK: PUBLIC FUNCTIONS
 ***************************************************************/
 
-void foxdbg_threadpool_init(foxdbg_channel_t **channels_ptr, size_t *channel_count_ptr)
+void foxdbg_thread_init(foxdbg_channel_t **channels_ptr, size_t *channel_count_ptr)
 {   
     running.store(true);
 
@@ -86,26 +84,18 @@ void foxdbg_threadpool_init(foxdbg_channel_t **channels_ptr, size_t *channel_cou
     channel_count = channel_count_ptr;
 
     foxdbg_server_thread = std::thread(foxdbg_server_thread_main);
-    foxdbg_encoder_thread = std::thread(foxdbg_encoder_thread_main);
 }
 
-void foxdbg_threadpool_shutdown(void)
+void foxdbg_thread_shutdown(void)
 {
     lws_cancel_service(context);
 
     running.store(false);
 
-
     if (foxdbg_server_thread.joinable())
     {
         foxdbg_server_thread.join();
     }
-
-    if (foxdbg_encoder_thread.joinable())
-    {
-        foxdbg_encoder_thread.join();
-    }
-
 }
 
 /***************************************************************
@@ -137,43 +127,12 @@ int foxdbg_server_thread_main()
     while (running.load()) 
     {
         lws_service(context, 0);
-        //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        YIELD_CPU();
     }
+
+    foxdbg_protocol_shutdown();
 
     printf("Server thread exiting...\n");
-    return 0;
-}
-
-int foxdbg_encoder_thread_main() {
-
-    foxdbg_encoder_init();
-
-    foxdbg_channel_t *current = *channels;
-
-    while (running.load()) 
-    {
-        
-        if (current == NULL)
-        {
-            YIELD_CPU();
-            current = *channels;
-        }
-        else
-        {
-            if (ATOMIC_READ_INT(&current->subscription_id) >= 0)
-            {
-                foxdbg_encode_channel(current);
-            }
-
-            current = current->next;
-        }
-
-        //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
-
-    foxdbg_encoder_shutdown();
-
-    printf("Encoder thread exiting...\n");
     return 0;
 }
 

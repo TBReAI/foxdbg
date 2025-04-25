@@ -42,8 +42,9 @@
 extern "C" {
 #endif
 
-
 void foxdbg_protocol_init(lws_context *context, foxdbg_channel_t **channels, size_t *channel_count);
+
+void foxdbg_protocol_shutdown(void);
 
 void foxdbg_protocol_connect(lws *client);
 

@@ -26,6 +26,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <turbojpeg.h>
+#include <libwebsockets.h>
+
 #include <json/json.hpp>
 
 using json = nlohmann::json;
@@ -33,6 +36,26 @@ using json = nlohmann::json;
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
+
+#ifdef _WIN32
+#include <windows.h>
+uint64_t current_timestamp_ms() {
+    LARGE_INTEGER frequency;
+    LARGE_INTEGER performance_count;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&performance_count);
+    long long milliseconds = (performance_count.QuadPart * 1000) / frequency.QuadPart;
+    return milliseconds;
+}
+#else // Assume POSIX-like system
+#include <sys/time.h>
+uint64_t current_timestamp_ms() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    long long milliseconds = (long long)(tv.tv_sec) * 1000 + (long long)(tv.tv_usec) / 1000;
+    return milliseconds;
+}
+#endif
 
 /***************************************************************
 ** MARK: TYPEDEFS
@@ -43,13 +66,27 @@ using json = nlohmann::json;
 ***************************************************************/
 
 static void send_json(json data);
+static void send_buffer(uint8_t *buffer, size_t buffer_size, size_t data_size, int subscription_id);
 
 static void send_server_info(void);
 static void send_advertise(void);
 
+static void send_image(foxdbg_channel_t *channel);
+
+static size_t encode_image_byte_array(
+    uint8_t* tx_buffer, 
+    size_t tx_buffer_size, 
+    int width, int height, int components,
+    const uint8_t* compressedImage, size_t compressedSize
+);
+
 /***************************************************************
 ** MARK: STATIC VARIABLES
 ***************************************************************/
+
+static uint8_t raw_data_buffer[10*1024*1024];
+static uint8_t encode_buffer[10*1024*1024];
+static uint8_t info_data_buffer[1024*1024];
 
 static uint8_t tx_buffer[1024*1024]; /* 1MB tx buffer */
 
@@ -58,6 +95,11 @@ static struct lws *client = NULL;
 
 static foxdbg_channel_t **channels = NULL;
 static size_t *channel_count = 0;
+
+static tjhandle jpeg_handle = NULL;
+
+static int jpegSubsamp = TJSAMP_420; /* Default to 4:2:0 subsampling */
+static int jpegQuality = 25; /* Default quality factor */
 
 /***************************************************************
 ** MARK: PUBLIC FUNCTIONS
@@ -68,6 +110,27 @@ void foxdbg_protocol_init(lws_context *context_ptr, foxdbg_channel_t **channels_
     context = context_ptr;
     channels = channels_ptr;
     channel_count = channel_count_ptr;
+
+    jpeg_handle = tjInitCompress();
+    if (jpeg_handle == NULL)
+    {
+        fprintf(stderr, "Failed to initialize JPEG compressor: %s\n", tjGetErrorStr());
+    }
+}
+
+void foxdbg_protocol_shutdown(void)
+{
+    if (jpeg_handle)
+    {
+        tjDestroy(jpeg_handle);
+        jpeg_handle = NULL;
+    }
+
+    context = NULL;
+    channels = NULL;
+    channel_count = 0;
+
+    client = NULL;
 }
 
 void foxdbg_protocol_connect(lws *client_ptr)
@@ -207,33 +270,49 @@ void foxdbg_protocol_transmit_subscriptions(void)
     {   
         int subscription_id = ATOMIC_READ_INT(&current->subscription_id);
 
-        if (subscription_id >= 0)
+        uint64_t current_time = current_timestamp_ms();
+        uint64_t last_time = current->last_tx_time;
+        uint64_t elapsed = current_time - last_time;
+
+        if (elapsed > current->target_tx_time)
         {
-            uint8_t *data;
-            size_t data_size;
-            foxdbg_buffer_begin_read(current->encoded_buffer, (void**)&data, &data_size);
+            current->last_tx_time = current_time;
+        }
 
-            // Header setup
-            uint8_t* buf = data + LWS_PRE;
-            buf[0] = 0x01;
-            buf[1] =  static_cast<uint8_t>( subscription_id       & 0xFF);
-            buf[2] =  static_cast<uint8_t>((subscription_id >>  8) & 0xFF);
-            buf[3] =  static_cast<uint8_t>((subscription_id >> 16) & 0xFF);
-            buf[4] =  static_cast<uint8_t>((subscription_id >> 24) & 0xFF);
-
-            uint64_t nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count();
-
-            for (int i = 0; i < 8; ++i)
+        if (subscription_id >= 0 && elapsed > current->target_tx_time)
+        {
+            switch (current->channel_type)
             {
-                buf[5 + i] = static_cast<uint8_t>((nsec >> (8 * i)) & 0xFF);
-            }
+                case FOXDBG_CHANNEL_TYPE_IMAGE:
+                {
+                    send_image(current);
+                } break;
 
-            lws_write(client, (uint8_t*)data + LWS_PRE, data_size - LWS_PRE, LWS_WRITE_BINARY);
-           
-            foxdbg_buffer_end_read(current->encoded_buffer);
-            
+                case FOXDBG_CHANNEL_TYPE_POINTCLOUD:
+                {
+                    //encode_pointcloud(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_CUBES:
+                {
+                    //encode_cubes(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_LINES:
+                {
+                    //encode_lines(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_POSE:
+                {
+                    //encode_pose(current);
+                } break;
+
+                default:
+                {
+
+                } break;
+            }
         }
 
         current = current->next;
@@ -267,6 +346,42 @@ static void send_json(json data)
     lws_write(client, tx_buffer + LWS_PRE, json_len, LWS_WRITE_TEXT);
 
     printf("Sent JSON: %s\n", json_str.c_str());
+
+}
+
+static void send_buffer(uint8_t *buffer, size_t buffer_size, size_t data_size, int subscription_id)
+{
+    if (!client)
+    {
+        fprintf(stderr, "Client not connected\n");
+        return;
+    }
+
+    if ((data_size + LWS_PRE) > sizeof(tx_buffer))
+    {
+        fprintf(stderr, "Buffer message too large\n");
+        return;
+    }
+
+    /* Header setup */
+    uint8_t* buf = buffer;
+    buf[0] = 0x01;
+    buf[1] =  static_cast<uint8_t>( subscription_id       & 0xFF);
+    buf[2] =  static_cast<uint8_t>((subscription_id >>  8) & 0xFF);
+    buf[3] =  static_cast<uint8_t>((subscription_id >> 16) & 0xFF);
+    buf[4] =  static_cast<uint8_t>((subscription_id >> 24) & 0xFF);
+
+    uint64_t nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+
+    for (int i = 0; i < 8; ++i)
+    {
+        buf[5 + i] = static_cast<uint8_t>((nsec >> (8 * i)) & 0xFF);
+    }
+
+
+    lws_write(client, buffer, data_size, LWS_WRITE_BINARY);
 
 }
 
@@ -420,4 +535,157 @@ static void send_advertise(void)
     }
 
     send_json(channels_info);
+}
+
+static void send_image(foxdbg_channel_t *channel)
+{
+    void *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(raw_data_buffer))
+    {
+        memcpy(raw_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+
+    foxdbg_buffer_begin_read(channel->info_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(info_data_buffer))
+    {
+        memcpy(info_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->info_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->info_buffer);
+        return;
+    }
+
+    int pixelFormat = TJPF_RGB;
+
+    if (((foxdbg_image_info_t*)info_data_buffer)->channels == 1)
+    {
+        pixelFormat = TJPF_GRAY;
+    }
+    else if (((foxdbg_image_info_t*)info_data_buffer)->channels == 3)
+    {
+        pixelFormat = TJPF_RGB;
+    }
+    else if (((foxdbg_image_info_t*)info_data_buffer)->channels == 4)
+    {
+        pixelFormat = TJPF_RGBA;
+    }
+
+    unsigned long compressedSize = 0;
+    unsigned char* compressedImage = NULL;
+
+    int result = tjCompress2(
+        jpeg_handle,
+        raw_data_buffer,
+        ((foxdbg_image_info_t*)info_data_buffer)->width,
+        0, // Pitch
+        ((foxdbg_image_info_t*)info_data_buffer)->height,
+        pixelFormat,
+        &compressedImage,
+        &compressedSize,
+        jpegSubsamp,
+        jpegQuality,
+        TJFLAG_FASTDCT
+    );
+
+    if (result != 0)
+    {
+        fprintf(stderr, "Failed to compress image: %s\n", tjGetErrorStr());
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    size_t encode_buffer_size = sizeof(encode_buffer);
+    size_t tx_buffer_size = sizeof(tx_buffer);
+
+
+    size_t bytes_written = encode_image_byte_array(
+        encode_buffer, 
+        encode_buffer_size, 
+        ((foxdbg_image_info_t*)info_data_buffer)->width,
+        ((foxdbg_image_info_t*)info_data_buffer)->height,
+        ((foxdbg_image_info_t*)info_data_buffer)->channels,
+        compressedImage, 
+        compressedSize
+    );
+
+
+    if (tx_buffer_size >= (bytes_written + LWS_PRE + 13))
+    {
+        memcpy((uint8_t*)tx_buffer + LWS_PRE + 13, encode_buffer, bytes_written);
+
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            bytes_written + 13,
+            subscription_id
+        );
+    }
+
+
+    tjFree(compressedImage);
+}
+
+
+static size_t encode_image_byte_array(uint8_t* tx_buffer, size_t tx_buffer_size, int width, int height, int components, const uint8_t* compressedImage, size_t compressedSize) {
+
+    /* Estimate required buffer size (same as before) */
+    size_t estimated_json_overhead = 100; /* A safe estimate */
+    size_t estimated_data_size = compressedSize * 4; /* Max 3 digits + comma per byte */
+    size_t estimated_total_size = estimated_json_overhead + estimated_data_size + 10;
+
+    if (estimated_total_size > tx_buffer_size) {
+        fprintf(stderr, "Estimated JSON message too large for buffer\n");
+        return 0; // Indicate failure
+    }
+
+    char* buffer_ptr = (char*)tx_buffer;
+    size_t bytes_written = 0;
+
+    /* Write the fixed JSON parts */
+    bytes_written += sprintf(buffer_ptr + bytes_written, "{\"width\":%d,", width);
+    bytes_written += sprintf(buffer_ptr + bytes_written, "\"height\":%d,", height);
+    bytes_written += sprintf(buffer_ptr + bytes_written, "\"channels\":%d,", components);
+    bytes_written += sprintf(buffer_ptr + bytes_written, "\"encoding\":\"jpeg\",");
+    bytes_written += sprintf(buffer_ptr + bytes_written, "\"data\":[");
+
+    /* Write the byte array with manual conversion and fewer calls */
+    for (size_t i = 0; i < compressedSize; ++i) {
+        uint8_t byte = compressedImage[i];
+        if (byte >= 100) {
+            buffer_ptr[bytes_written++] = '0' + (byte / 100);
+            buffer_ptr[bytes_written++] = '0' + ((byte / 10) % 10);
+            buffer_ptr[bytes_written++] = '0' + (byte % 10);
+        } else if (byte >= 10) {
+            buffer_ptr[bytes_written++] = '0' + (byte / 10);
+            buffer_ptr[bytes_written++] = '0' + (byte % 10);
+        } else {
+            buffer_ptr[bytes_written++] = '0' + byte;
+        }
+
+        if (i < compressedSize - 1) {
+            buffer_ptr[bytes_written++] = ',';
+        }
+    }
+
+    /* Close the data array and the JSON object */
+    buffer_ptr[bytes_written++] = ']';
+    buffer_ptr[bytes_written++] = '}';
+    buffer_ptr[bytes_written] = '\0'; /* Null terminate */
+
+    return bytes_written; /* Return the actual size of the JSON data */
 }

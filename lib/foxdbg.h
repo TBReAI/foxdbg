@@ -56,7 +56,7 @@ void foxdbg_update(void);
 void foxdbg_shutdown(void);
 
 /* create a new channel */
-int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_type);
+int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_type, int target_hz);
 
 int foxdbg_get_channel(const char *topic_name);
 

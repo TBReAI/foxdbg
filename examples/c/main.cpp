@@ -30,6 +30,7 @@ bool is_running = true;
 
 static BOOL WINAPI signal_handler(DWORD signal)
 {
+    printf("Signal %d received, shutting down...\n", signal);
     is_running = false;
     return TRUE;
 }
@@ -39,7 +40,7 @@ int main(int argc, char *argv[])
     /* Initialize the debugger */
     foxdbg_init();
 
-    int channel_id = foxdbg_add_channel("/sensors/banana", FOXDBG_CHANNEL_TYPE_IMAGE);   
+    int channel_id = foxdbg_add_channel("/sensors/banana", FOXDBG_CHANNEL_TYPE_IMAGE, 30);   
 
     int width, height, channels;
 

@@ -16,8 +16,7 @@
 ***************************************************************/
 
 #include "foxdbg.h"
-#include "foxdbg_threadpool.h"
-
+#include "foxdbg_thread.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,16 +51,16 @@ void foxdbg_init()
     channels = NULL;
     channel_count = 0;
 
-    foxdbg_threadpool_init(&channels, &channel_count);
+    foxdbg_thread_init(&channels, &channel_count);
 }
 
 
 void foxdbg_shutdown(void)
 {
-    foxdbg_threadpool_shutdown();
+    foxdbg_thread_shutdown();
 }
 
-int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_type)
+int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_type, int target_hz)
 {   
     size_t payload_size = 0;
     size_t info_size = 0;
@@ -107,10 +106,8 @@ int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_typ
         } break;
     }
 
-    foxdbg_buffer_t *raw_buffer;
-    foxdbg_buffer_t *encoded_buffer;
-
-    if (!foxdbg_buffer_alloc(payload_size, &raw_buffer) || !foxdbg_buffer_alloc(payload_size, &encoded_buffer))
+    foxdbg_buffer_t *data_buffer;
+    if (!foxdbg_buffer_alloc(payload_size, &data_buffer))
     {
         return -1; /* Failed to allocate buffers */
     }
@@ -129,9 +126,13 @@ int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_typ
     }
 
     new_channel->topic_name = topic_name;
+    new_channel->target_tx_time = (1000 / target_hz);
+    new_channel->last_tx_time = 0;
+
+    printf("Adding channel %s with target tx time %llu\n", topic_name, new_channel->target_tx_time);
+
     new_channel->channel_type = channel_type;
-    new_channel->raw_buffer = raw_buffer;
-    new_channel->encoded_buffer = encoded_buffer;
+    new_channel->data_buffer = data_buffer;
     new_channel->info_buffer = info_buffer;
     new_channel->subscription_id = -1;
     new_channel->channel_id = channel_count;
@@ -185,19 +186,19 @@ void foxdbg_write_channel(int channel_id, const void *data, size_t size)
             void *buffer_data = NULL;
             size_t buffer_size = 0;
 
-            foxdbg_buffer_begin_write(current->raw_buffer, &buffer_data, &buffer_size);
+            foxdbg_buffer_begin_write(current->data_buffer, &buffer_data, &buffer_size);
 
             //printf("Writing %zu bytes to %p\n", size, buffer_data);
 
             if (buffer_data && size <= buffer_size)
             {
                 memcpy(buffer_data, data, size);
-                foxdbg_buffer_end_write(current->raw_buffer, size);
+                foxdbg_buffer_end_write(current->data_buffer, size);
                 return;
             }
             else
             {
-                foxdbg_buffer_end_write(current->raw_buffer, 0);
+                foxdbg_buffer_end_write(current->data_buffer, 0);
                 return;
             }
 

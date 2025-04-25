@@ -71,14 +71,15 @@ typedef struct
 typedef struct foxdbg_channel_t
 {
     const char *topic_name;
+    uint64_t target_tx_time;
+    uint64_t last_tx_time;
 
     int channel_id;
     int subscription_id;
 
     foxdbg_channel_type_t channel_type;
 
-    foxdbg_buffer_t *raw_buffer;
-    foxdbg_buffer_t *encoded_buffer;
+    foxdbg_buffer_t *data_buffer;
     foxdbg_buffer_t *info_buffer;
 
     struct foxdbg_channel_t *next;
