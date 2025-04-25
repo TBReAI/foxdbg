@@ -72,6 +72,9 @@ static void send_server_info(void);
 static void send_advertise(void);
 
 static void send_image(foxdbg_channel_t *channel);
+static void send_float(foxdbg_channel_t *channel);
+static void send_integer(foxdbg_channel_t *channel);
+static void send_bool(foxdbg_channel_t *channel);
 
 static size_t encode_image_byte_array(
     uint8_t* tx_buffer, 
@@ -89,6 +92,9 @@ static uint8_t encode_buffer[10*1024*1024];
 static uint8_t info_data_buffer[1024*1024];
 
 static uint8_t tx_buffer[1024*1024]; /* 1MB tx buffer */
+
+static size_t encode_buffer_size = sizeof(encode_buffer);
+static size_t tx_buffer_size = sizeof(tx_buffer);
 
 static struct lws_context *context = NULL;
 static struct lws *client = NULL;
@@ -306,6 +312,21 @@ void foxdbg_protocol_transmit_subscriptions(void)
                 case FOXDBG_CHANNEL_TYPE_POSE:
                 {
                     //encode_pose(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_FLOAT:
+                {
+                    send_float(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_INTEGER:
+                {
+                    send_integer(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_BOOLEAN:
+                {
+                    send_bool(current);
                 } break;
 
                 default:
@@ -608,8 +629,7 @@ static void send_image(foxdbg_channel_t *channel)
 
     int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
 
-    size_t encode_buffer_size = sizeof(encode_buffer);
-    size_t tx_buffer_size = sizeof(tx_buffer);
+
 
 
     size_t bytes_written = encode_image_byte_array(
@@ -638,6 +658,106 @@ static void send_image(foxdbg_channel_t *channel)
 
 
     tjFree(compressedImage);
+}
+
+static void send_float(foxdbg_channel_t *channel)
+{
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    float *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
+
+    if (data_size == sizeof(float))
+    {
+        json json_data = {
+            {"value", (*data)}
+        };
+
+        std::string json_str = json_data.dump();
+        size_t json_len = json_str.length();
+
+        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+        {
+            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+            send_buffer(
+                (uint8_t*)tx_buffer + LWS_PRE, 
+                tx_buffer_size, 
+                json_len + 13,
+                subscription_id
+            );
+        }
+
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+}
+
+static void send_integer(foxdbg_channel_t *channel)
+{
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    int *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
+
+    if (data_size == sizeof(int))
+    {
+        json json_data = {
+            {"value", (*data)}
+        };
+
+        std::string json_str = json_data.dump();
+        size_t json_len = json_str.length();
+
+        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+        {
+            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+            send_buffer(
+                (uint8_t*)tx_buffer + LWS_PRE, 
+                tx_buffer_size, 
+                json_len + 13,
+                subscription_id
+            );
+        }
+
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+}
+
+
+static void send_bool(foxdbg_channel_t *channel)
+{
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    bool *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
+
+    if (data_size == sizeof(bool))
+    {
+        json json_data = {
+            {"value", (*data)}
+        };
+
+        std::string json_str = json_data.dump();
+        size_t json_len = json_str.length();
+
+        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+        {
+            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+            send_buffer(
+                (uint8_t*)tx_buffer + LWS_PRE, 
+                tx_buffer_size, 
+                json_len + 13,
+                subscription_id
+            );
+        }
+
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
 }
 
 

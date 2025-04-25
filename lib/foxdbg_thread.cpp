@@ -48,7 +48,6 @@ static int foxdbg_encoder_thread_main();
 
 static int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
 
-
 /***************************************************************
 ** MARK: STATIC VARIABLES
 ***************************************************************/
@@ -168,17 +167,10 @@ static int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason,
 
         case LWS_CALLBACK_SERVER_WRITEABLE:
         {
-            
             /* handle server writeable event */
 
-            auto start = std::chrono::high_resolution_clock::now();
-            //foxdbg_procotol_send_pending(); // Assuming 'procotol' is the intended function name as in the original code
             foxdbg_protocol_transmit_subscriptions();
 
-            auto end = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-            //printf("FOXDBG: foxdbg_procotol_send_pending took %lld ms\n", duration.count());
-            
             lws_callback_on_writable(wsi);
         } break;
 
