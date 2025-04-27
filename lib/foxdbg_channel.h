@@ -63,6 +63,7 @@ typedef struct
 {
     foxdbg_vector3_t position;
     foxdbg_vector3_t orientation;
+    foxdbg_color_t color;
 } foxdbg_pose_t;
 
 typedef struct 

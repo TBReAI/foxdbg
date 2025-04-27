@@ -32,6 +32,9 @@
 
 #include <json/json.hpp>
 
+#define _USE_MATH_DEFINES
+#include <math.h>
+
 using json = nlohmann::json;
 
 /***************************************************************
@@ -75,6 +78,7 @@ static void send_advertise(void);
 static void send_image(foxdbg_channel_t *channel);
 static void send_pointcloud(foxdbg_channel_t *channel);
 static void send_cubes(foxdbg_channel_t *channel);
+static void send_pose(foxdbg_channel_t *channel);
 static void send_float(foxdbg_channel_t *channel);
 static void send_integer(foxdbg_channel_t *channel);
 static void send_bool(foxdbg_channel_t *channel);
@@ -309,7 +313,7 @@ void foxdbg_protocol_transmit_subscriptions(void)
 
                 case FOXDBG_CHANNEL_TYPE_POSE:
                 {
-                    //encode_pose(current);
+                    send_pose(current);
                 } break;
 
                 case FOXDBG_CHANNEL_TYPE_FLOAT:
@@ -794,6 +798,104 @@ static void send_cubes(foxdbg_channel_t *channel)
 
         entity["cubes"].push_back(cube_object);
     }
+
+    j["entities"].push_back(entity);
+
+    std::string jsonStr = j.dump();
+
+    if (tx_buffer_size >= (jsonStr.size() + LWS_PRE + 13))
+    {
+        memcpy((uint8_t*)tx_buffer + LWS_PRE + 13, jsonStr.c_str(), jsonStr.size());
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            jsonStr.size() + 13,
+            subscription_id
+        );
+    }
+}
+
+static void send_pose(foxdbg_channel_t *channel)
+{
+    void *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(raw_data_buffer) && data_size == sizeof(foxdbg_pose_t))
+    {
+        memcpy(raw_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    json j;
+    j["entities"] = json::array();
+
+    json entity;
+    entity["frame_id"] = "world";
+    entity["id"] = channel->topic_name;
+    entity["timestamp"] = {
+        {"sec", 0},
+        {"nsec", 0}
+    };
+
+    entity["arrows"] = json::array();
+    
+    foxdbg_pose_t pose = *(foxdbg_pose_t*)raw_data_buffer;
+
+    float pitch = pose.orientation.x;
+    float roll = pose.orientation.y;
+    float yaw = pose.orientation.z + M_PI/2.0f;  // <-- Adjust yaw by +90 degrees (important!)
+    
+    float cy = cos(yaw * 0.5f);
+    float sy = sin(yaw * 0.5f);
+    float cp = cos(pitch * 0.5f);
+    float sp = sin(pitch * 0.5f);
+    float cr = cos(roll * 0.5f);
+    float sr = sin(roll * 0.5f);
+    
+    // Standard XYZ euler to quaternion (for Foxglove arrow)
+    float qx = sr * cp * cy - cr * sp * sy;
+    float qy = cr * sp * cy + sr * cp * sy;
+    float qz = cr * cp * sy - sr * sp * cy;
+    float qw = cr * cp * cy + sr * sp * sy;    
+
+    json arrow_object;
+    arrow_object["pose"]["position"] = {
+        {"x", pose.position.x},
+        {"y", pose.position.y},
+        {"z", pose.position.z}
+    };
+
+    arrow_object["pose"]["orientation"] = {
+        {"x", qx},
+        {"y", qy},
+        {"z", qz},
+        {"w", qw}
+    };
+    
+    arrow_object["shaft_length"] = 0.5f;
+    arrow_object["shaft_diameter"] = 0.05f;
+    arrow_object["head_length"] = 0.15f;
+    arrow_object["head_diameter"] = 0.1f;
+
+    // Color mapping
+    foxdbg_color_t color = pose.color;
+    arrow_object["color"] = {
+        {"r", color.r},
+        {"g", color.g},
+        {"b", color.b},
+        {"a", color.a}
+    };
+
+    entity["arrows"].push_back(arrow_object);
 
     j["entities"].push_back(entity);
 
