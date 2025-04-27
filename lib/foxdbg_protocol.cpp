@@ -78,7 +78,9 @@ static void send_advertise(void);
 static void send_image(foxdbg_channel_t *channel);
 static void send_pointcloud(foxdbg_channel_t *channel);
 static void send_cubes(foxdbg_channel_t *channel);
+static void send_lines(foxdbg_channel_t *channel);
 static void send_pose(foxdbg_channel_t *channel);
+static void send_transform(foxdbg_channel_t *channel);
 static void send_float(foxdbg_channel_t *channel);
 static void send_integer(foxdbg_channel_t *channel);
 static void send_bool(foxdbg_channel_t *channel);
@@ -308,7 +310,12 @@ void foxdbg_protocol_transmit_subscriptions(void)
 
                 case FOXDBG_CHANNEL_TYPE_LINES:
                 {
-                    //encode_lines(current);
+                    send_lines(current);
+                } break;
+
+                case FOXDBG_CHANNEL_TYPE_TRANSFORM:
+                {
+                    send_transform(current);
                 } break;
 
                 case FOXDBG_CHANNEL_TYPE_POSE:
@@ -466,6 +473,11 @@ static void send_advertise(void)
             case FOXDBG_CHANNEL_TYPE_POSE:
             {
                 channel_schema = "foxglove.SceneUpdate";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_TRANSFORM:
+            {
+                channel_schema = "foxglove.FrameTransform";
             } break;
 
             case FOXDBG_CHANNEL_TYPE_FLOAT:
@@ -816,6 +828,100 @@ static void send_cubes(foxdbg_channel_t *channel)
     }
 }
 
+static void send_lines(foxdbg_channel_t *channel)
+{
+    void *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(raw_data_buffer) && data_size > 0 && data_size % sizeof(foxdbg_line_t) == 0)
+    {
+        memcpy(raw_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    json j;
+    j["entities"] = json::array();
+
+    json entity;
+    entity["frame_id"] = "world";
+    entity["id"] = channel->topic_name;
+    entity["timestamp"] = {
+        {"sec", 0},
+        {"nsec", 0}
+    };
+
+    size_t numLines = data_size / sizeof(foxdbg_line_t);
+    foxdbg_line_t *lines = (foxdbg_line_t*)raw_data_buffer;
+
+    for (size_t i = 0; i < numLines; ++i)
+    {
+
+        foxdbg_line_t line = lines[i];
+
+        json line_object;
+
+        line_object["type"] = 2; /* LINE_LIST */
+
+        line_object["pose"]["position"] = {
+            {"x", 0.0f}, {"y", 0.0f}, {"z", 0.0f}
+        };
+
+        line_object["pose"]["orientation"] = {
+            {"x", 0.0f}, {"y", 0.0f}, {"z", 0.0f}, {"w", 1.0f}
+        };
+
+        line_object["thickness"] = line.thickness;
+        line_object["scale_invariant"] = false;
+        line_object["points"] = json::array();
+        line_object["points"].push_back({
+            {"x", line.start.x},
+            {"y", line.start.y},
+            {"z", line.start.z}
+        });
+        line_object["points"].push_back({
+            {"x", line.end.x},
+            {"y", line.end.y},
+            {"z", line.end.z}
+        });
+
+        // Color mapping
+        foxdbg_color_t color = line.color;
+        line_object["color"] = {
+            {"r", color.r},
+            {"g", color.g},
+            {"b", color.b},
+            {"a", color.a}
+        };
+
+        entity["lines"].push_back(line_object);
+
+    }
+
+    j["entities"].push_back(entity);
+
+    std::string jsonStr = j.dump();
+
+    if (tx_buffer_size >= (jsonStr.size() + LWS_PRE + 13))
+    {
+        memcpy((uint8_t*)tx_buffer + LWS_PRE + 13, jsonStr.c_str(), jsonStr.size());
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            jsonStr.size() + 13,
+            subscription_id
+        );
+    }
+}
+
 static void send_pose(foxdbg_channel_t *channel)
 {
     void *data;
@@ -911,6 +1017,75 @@ static void send_pose(foxdbg_channel_t *channel)
             jsonStr.size() + 13,
             subscription_id
         );
+    }
+}
+
+static void send_transform(foxdbg_channel_t *channel)
+{
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    float *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
+
+    if (data_size == sizeof(foxdbg_transform_t))
+    {
+
+        foxdbg_transform_t *transform = (foxdbg_transform_t*)data;
+
+        json json_data;
+        json_data["timestamp"]["sec"] = 0;
+        json_data["timestamp"]["nsec"] = 0;
+
+        json_data["parent_frame_id"] = transform->parent_id;
+        json_data["child_frame_id"] = transform->id;
+
+        json_data["translation"] = {
+            {"x", transform->position.x},
+            {"y", transform->position.y},
+            {"z", transform->position.z}
+        };
+
+        float pitch = transform->orientation.x;
+        float roll = transform->orientation.y;
+        float yaw = transform->orientation.z;
+    
+        float cy = cos(yaw * 0.5f);
+        float sy = sin(yaw * 0.5f);
+        float cp = cos(pitch * 0.5f);
+        float sp = sin(pitch * 0.5f);
+        float cr = cos(roll * 0.5f);
+        float sr = sin(roll * 0.5f);
+
+        // Standard XYZ euler to quaternion (for Foxglove arrow)
+        float qx = sr * cp * cy - cr * sp * sy;
+        float qy = cr * sp * cy + sr * cp * sy;
+        float qz = cr * cp * sy - sr * sp * cy;
+        float qw = cr * cp * cy + sr * sp * sy;    
+
+        json_data["rotation"] = {
+            {"x", qx},
+            {"y", qy},
+            {"z", qz},
+            {"w", qw}
+        };
+
+        std::string json_str = json_data.dump();
+        size_t json_len = json_str.length();
+
+        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+        {
+            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+            send_buffer(
+                (uint8_t*)tx_buffer + LWS_PRE, 
+                tx_buffer_size, 
+                json_len + 13,
+                subscription_id
+            );
+        }
+
+        foxdbg_buffer_end_read(channel->data_buffer);
     }
 }
 

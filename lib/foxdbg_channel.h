@@ -73,6 +73,22 @@ typedef struct
     foxdbg_color_t color;
 } foxdbg_cube_t;
 
+typedef struct
+{
+    const char *id;
+    const char *parent_id;
+    foxdbg_vector3_t position;
+    foxdbg_vector3_t orientation;
+} foxdbg_transform_t;
+
+typedef struct
+{
+    foxdbg_vector3_t start;
+    foxdbg_vector3_t end;
+    foxdbg_color_t color;
+    float thickness;
+} foxdbg_line_t;
+
 typedef enum
 {
     FOXDBG_CHANNEL_TYPE_IMAGE,
@@ -80,6 +96,7 @@ typedef enum
     FOXDBG_CHANNEL_TYPE_CUBES,
     FOXDBG_CHANNEL_TYPE_LINES,
     FOXDBG_CHANNEL_TYPE_POSE,
+    FOXDBG_CHANNEL_TYPE_TRANSFORM,
     FOXDBG_CHANNEL_TYPE_FLOAT,
     FOXDBG_CHANNEL_TYPE_INTEGER,
     FOXDBG_CHANNEL_TYPE_BOOLEAN
