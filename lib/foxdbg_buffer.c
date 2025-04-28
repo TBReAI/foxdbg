@@ -71,9 +71,6 @@ bool foxdbg_buffer_alloc(size_t size, foxdbg_buffer_t **buffer)
         return false;
     }
 
-    //printf("Allocated buffer %p (%zu bytes)\n", buf->buffer_a, size);
-    //printf("Allocated buffer %p (%zu bytes)\n", buf->buffer_b, size);
-
     buf->front_buffer = buf->buffer_a;
     buf->back_buffer = buf->buffer_b;
     buf->front_buffer_size = 0;
@@ -101,15 +98,11 @@ void foxdbg_buffer_begin_write(foxdbg_buffer_t* buffer, void **data, size_t *siz
     *data = buffer->back_buffer;
     *size = buffer->buffer_size;
 
-    //printf("BEGAN WRITE %p\n", buffer->back_buffer);
-
 }
 
 void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer, size_t populated_size)
 {
     buffer->back_buffer_size = populated_size;
-
-    //printf("ENDED WRITE %p\n", buffer->back_buffer);
 
     ATOMIC_WRITE_INT(&buffer->write_lock, 0);
 
@@ -127,18 +120,12 @@ void foxdbg_buffer_begin_read(foxdbg_buffer_t* buffer, void **data, size_t *size
 
     ATOMIC_WRITE_INT(&buffer->read_lock, 1);
 
-    //printf("BEGAN READ %p\n", buffer->front_buffer);
-
     *data = buffer->front_buffer;
     *size = buffer->front_buffer_size;
-
-    //printf("Buffer %p front size: %zu\n", buffer->front_buffer, buffer->front_buffer_size);
 }
 
 void foxdbg_buffer_end_read(foxdbg_buffer_t* buffer)
 {
-    //printf("ENDED READ %p\n", buffer->front_buffer);
-
     ATOMIC_WRITE_INT(&buffer->read_lock, 0);
 }
 
@@ -174,8 +161,6 @@ static void swap_buffers(foxdbg_buffer_t* buffer)
     size_t tmp_size = buffer->front_buffer_size;
     buffer->front_buffer_size = buffer->back_buffer_size;
     buffer->back_buffer_size = tmp_size;
-
-    //printf("SWAPPED %p <-> %p\n", buffer->front_buffer, buffer->back_buffer);
 
     ATOMIC_WRITE_INT(&buffer->swap_lock, 0);
 }

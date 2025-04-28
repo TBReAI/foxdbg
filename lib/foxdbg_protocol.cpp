@@ -214,7 +214,11 @@ void foxdbg_protocol_receive(char* data, size_t len)
                         if (channel->channel_id == channel_id)
                         {
                             ATOMIC_WRITE_INT(&channel->subscription_id, subscription_id);
-                            printf("FOXDBG: Client subscribed to %s\n", channel->topic_name);
+
+                            #if FOXDBG_DEBUG_PROTOCOL
+                                printf("FOXDBG: Client subscribed to %s\n", channel->topic_name);
+                            #endif
+
                             return;
                         }
                         channel = channel->next;
@@ -243,8 +247,11 @@ void foxdbg_protocol_receive(char* data, size_t len)
                     {
                         if (ATOMIC_READ_INT(&channel->subscription_id) == subscription_id_int)
                         {
-                            printf("FOXDBG: Client unsubscribed from %s\n", channel->topic_name);
                             ATOMIC_WRITE_INT(&channel->subscription_id, -1);
+
+                            #if FOXDBG_DEBUG_PROTOCOL
+                                printf("FOXDBG: Client unsubscribed from %s\n", channel->topic_name);
+                            #endif
                             return;
                         }
                         channel = channel->next;
@@ -380,7 +387,9 @@ static void send_json(json data)
 
     lws_write(client, tx_buffer + LWS_PRE, json_len, LWS_WRITE_TEXT);
 
-    printf("Sent JSON: %s\n", json_str.c_str());
+    #if FOXDBG_DEBUG_PROTOCOL
+        printf("Sent JSON: %s\n", json_str.c_str());
+    #endif
 
 }
 
@@ -1022,170 +1031,203 @@ static void send_pose(foxdbg_channel_t *channel)
 
 static void send_transform(foxdbg_channel_t *channel)
 {
-    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
 
     float *data;
     size_t data_size;
     foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
 
-    if (data_size == sizeof(foxdbg_transform_t))
+    if (data_size <= sizeof(raw_data_buffer) && data_size == sizeof(foxdbg_transform_t))
     {
-
-        foxdbg_transform_t *transform = (foxdbg_transform_t*)data;
-
-        json json_data;
-        json_data["timestamp"]["sec"] = 0;
-        json_data["timestamp"]["nsec"] = 0;
-
-        json_data["parent_frame_id"] = transform->parent_id;
-        json_data["child_frame_id"] = transform->id;
-
-        json_data["translation"] = {
-            {"x", transform->position.x},
-            {"y", transform->position.y},
-            {"z", transform->position.z}
-        };
-
-        float pitch = transform->orientation.x;
-        float roll = transform->orientation.y;
-        float yaw = transform->orientation.z;
-    
-        float cy = cos(yaw * 0.5f);
-        float sy = sin(yaw * 0.5f);
-        float cp = cos(pitch * 0.5f);
-        float sp = sin(pitch * 0.5f);
-        float cr = cos(roll * 0.5f);
-        float sr = sin(roll * 0.5f);
-
-        // Standard XYZ euler to quaternion (for Foxglove arrow)
-        float qx = sr * cp * cy - cr * sp * sy;
-        float qy = cr * sp * cy + sr * cp * sy;
-        float qz = cr * cp * sy - sr * sp * cy;
-        float qw = cr * cp * cy + sr * sp * sy;    
-
-        json_data["rotation"] = {
-            {"x", qx},
-            {"y", qy},
-            {"z", qz},
-            {"w", qw}
-        };
-
-        std::string json_str = json_data.dump();
-        size_t json_len = json_str.length();
-
-        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
-        {
-            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
-
-            send_buffer(
-                (uint8_t*)tx_buffer + LWS_PRE, 
-                tx_buffer_size, 
-                json_len + 13,
-                subscription_id
-            );
-        }
-
+        memcpy(raw_data_buffer, data, data_size);
         foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+
+    foxdbg_transform_t *transform = (foxdbg_transform_t*)raw_data_buffer;
+
+    json json_data;
+    json_data["timestamp"]["sec"] = 0;
+    json_data["timestamp"]["nsec"] = 0;
+
+    json_data["parent_frame_id"] = transform->parent_id;
+    json_data["child_frame_id"] = transform->id;
+
+    json_data["translation"] = {
+        {"x", transform->position.x},
+        {"y", transform->position.y},
+        {"z", transform->position.z}
+    };
+
+    float pitch = transform->orientation.x;
+    float roll = transform->orientation.y;
+    float yaw = transform->orientation.z;
+
+    float cy = cos(yaw * 0.5f);
+    float sy = sin(yaw * 0.5f);
+    float cp = cos(pitch * 0.5f);
+    float sp = sin(pitch * 0.5f);
+    float cr = cos(roll * 0.5f);
+    float sr = sin(roll * 0.5f);
+
+    // Standard XYZ euler to quaternion (for Foxglove arrow)
+    float qx = sr * cp * cy - cr * sp * sy;
+    float qy = cr * sp * cy + sr * cp * sy;
+    float qz = cr * cp * sy - sr * sp * cy;
+    float qw = cr * cp * cy + sr * sp * sy;    
+
+    json_data["rotation"] = {
+        {"x", qx},
+        {"y", qy},
+        {"z", qz},
+        {"w", qw}
+    };
+
+    std::string json_str = json_data.dump();
+    size_t json_len = json_str.length();
+
+    if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+    {
+        memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            json_len + 13,
+            subscription_id
+        );
     }
 }
 
 static void send_float(foxdbg_channel_t *channel)
 {
-    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
 
-    float *data;
+    void *data;
     size_t data_size;
     foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
 
-    if (data_size == sizeof(float))
+    if (data_size <= sizeof(raw_data_buffer) && data_size == sizeof(float))
     {
-        json json_data = {
-            {"value", (*data)}
-        };
-
-        std::string json_str = json_data.dump();
-        size_t json_len = json_str.length();
-
-        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
-        {
-            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
-
-            send_buffer(
-                (uint8_t*)tx_buffer + LWS_PRE, 
-                tx_buffer_size, 
-                json_len + 13,
-                subscription_id
-            );
-        }
-
+        memcpy(raw_data_buffer, data, data_size);
         foxdbg_buffer_end_read(channel->data_buffer);
     }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    float *raw = (float*)raw_data_buffer;
+
+    json json_data = {
+        {"value", (*raw)}
+    };
+
+    std::string json_str = json_data.dump();
+    size_t json_len = json_str.length();
+
+    if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+    {
+        memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            json_len + 13,
+            subscription_id
+        );
+    }
+    
 }
 
 static void send_integer(foxdbg_channel_t *channel)
 {
-    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
-
-    int *data;
+    void *data;
     size_t data_size;
     foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
 
-    if (data_size == sizeof(int))
+    if (data_size <= sizeof(raw_data_buffer) && data_size == sizeof(int))
     {
-        json json_data = {
-            {"value", (*data)}
-        };
-
-        std::string json_str = json_data.dump();
-        size_t json_len = json_str.length();
-
-        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
-        {
-            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
-
-            send_buffer(
-                (uint8_t*)tx_buffer + LWS_PRE, 
-                tx_buffer_size, 
-                json_len + 13,
-                subscription_id
-            );
-        }
-
+        memcpy(raw_data_buffer, data, data_size);
         foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    int *raw = (int*)raw_data_buffer;
+
+    json json_data = {
+        {"value", (*raw)}
+    };
+
+    std::string json_str = json_data.dump();
+    size_t json_len = json_str.length();
+
+    if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+    {
+        memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            json_len + 13,
+            subscription_id
+        );
     }
 }
 
 
 static void send_bool(foxdbg_channel_t *channel)
 {
-    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
-
-    bool *data;
+    void *data;
     size_t data_size;
     foxdbg_buffer_begin_read(channel->data_buffer, (void**)&data, &data_size);
 
-    if (data_size == sizeof(bool))
+    if (data_size <= sizeof(raw_data_buffer) && data_size == sizeof(bool))
     {
-        json json_data = {
-            {"value", (*data)}
-        };
-
-        std::string json_str = json_data.dump();
-        size_t json_len = json_str.length();
-
-        if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
-        {
-            memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
-
-            send_buffer(
-                (uint8_t*)tx_buffer + LWS_PRE, 
-                tx_buffer_size, 
-                json_len + 13,
-                subscription_id
-            );
-        }
-
+        memcpy(raw_data_buffer, data, data_size);
         foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    bool *raw = (bool*)raw_data_buffer;
+
+    json json_data = {
+        {"value", (*raw)}
+    };
+
+    std::string json_str = json_data.dump();
+    size_t json_len = json_str.length();
+
+    if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+    {
+        memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            json_len + 13,
+            subscription_id
+        );
     }
 }
 

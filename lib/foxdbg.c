@@ -140,7 +140,9 @@ int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_typ
     new_channel->target_tx_time = (1000 / target_hz);
     new_channel->last_tx_time = 0;
 
-    printf("Adding channel %s with target tx time %llu\n", topic_name, new_channel->target_tx_time);
+    #if FOXDBG_DEBUG_INTERFACE
+        printf("Adding channel %s with target tx time %llu\n", topic_name, new_channel->target_tx_time);
+    #endif
 
     new_channel->channel_type = channel_type;
     new_channel->data_buffer = data_buffer;
@@ -228,8 +230,10 @@ int foxdbg_add_rx_channel(const char *topic_name, foxdbg_channel_type_t channel_
     new_channel->topic_name = topic_name;
     new_channel->target_tx_time = 0;
     new_channel->last_tx_time = 0;
-
-    printf("Adding channel %s with target tx time %llu\n", topic_name, new_channel->target_tx_time);
+    
+    #if FOXDBG_DEBUG_INTERFACE
+        printf("Adding channel %s with target tx time %llu\n", topic_name, new_channel->target_tx_time);
+    #endif
 
     new_channel->channel_type = channel_type;
     new_channel->data_buffer = data_buffer;
@@ -290,7 +294,6 @@ void foxdbg_write_channel(int channel_id, const void *data, size_t size)
 
             foxdbg_buffer_begin_write(current->data_buffer, &buffer_data, &buffer_size);
 
-            //printf("Writing %zu bytes to %p\n", size, buffer_data);
 
             if (buffer_data && size <= buffer_size)
             {

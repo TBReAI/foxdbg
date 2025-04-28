@@ -134,7 +134,7 @@ int foxdbg_server_thread_main()
     while (running.load()) 
     {
         lws_service(context, 0);
-        //YIELD_CPU();
+        YIELD_CPU();
     }
 
     foxdbg_protocol_shutdown();
