@@ -96,6 +96,15 @@ add_subdirectory(libwebsockets)
 
 option(LWS_WITHOUT_TEST_PING "Option" OFF)
 
+# Detect single-config generator
+if(CMAKE_GENERATOR MATCHES "Makefiles|Ninja")
+    set(BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>)
+    set(INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --prefix <INSTALL_DIR>)
+else()
+    set(BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE})
+    set(INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --prefix <INSTALL_DIR>)
+endif()
+
 ExternalProject_Add(libjpeg-turbo
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libjpeg-turbo
     BINARY_DIR ${CMAKE_BINARY_DIR}/libjpeg-turbo-build
@@ -104,7 +113,6 @@ ExternalProject_Add(libjpeg-turbo
         -DENABLE_SHARED=OFF
         -DWITH_SIMD=ON
         -DWITH_TURBOJPEG=ON
-
-    BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
-    INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --prefix <INSTALL_DIR>
+    BUILD_COMMAND ${BUILD_COMMAND}
+    INSTALL_COMMAND ${INSTALL_COMMAND}
 )
