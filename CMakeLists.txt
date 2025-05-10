@@ -16,9 +16,23 @@ add_library(foxdbg STATIC
     lib/foxdbg_protocol.cpp
 )
 
+add_dependencies(foxdbg libjpeg-turbo)
+
+if (WIN32)
+    set(FOXDBG_LIBS 
+        websockets
+        ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/turbojpeg-static.lib
+    )
+else()
+    set(FOXDBG_LIBS 
+        websockets
+        ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib64/libjpeg.a
+        ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib64/libturbojpeg.a
+    )
+endif()
+
 target_link_libraries(foxdbg PRIVATE
-    websockets
-    ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/turbojpeg-static.lib
+    ${FOXDBG_LIBS}
 )
 
 target_include_directories(foxdbg PRIVATE
