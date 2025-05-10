@@ -81,6 +81,7 @@ static void send_cubes(foxdbg_channel_t *channel);
 static void send_lines(foxdbg_channel_t *channel);
 static void send_pose(foxdbg_channel_t *channel);
 static void send_transform(foxdbg_channel_t *channel);
+static void send_location(foxdbg_channel_t *channel);
 static void send_float(foxdbg_channel_t *channel);
 static void send_integer(foxdbg_channel_t *channel);
 static void send_bool(foxdbg_channel_t *channel);
@@ -325,6 +326,11 @@ void foxdbg_protocol_transmit_subscriptions(void)
                     send_transform(current);
                 } break;
 
+                case FOXDBG_CHANNEL_TYPE_LOCATION:
+                {
+                    send_location(current);
+                } break;
+
                 case FOXDBG_CHANNEL_TYPE_POSE:
                 {
                     send_pose(current);
@@ -487,6 +493,11 @@ static void send_advertise(void)
             case FOXDBG_CHANNEL_TYPE_TRANSFORM:
             {
                 channel_schema = "foxglove.FrameTransform";
+            } break;
+
+            case FOXDBG_CHANNEL_TYPE_LOCATION:
+            {
+                channel_schema = "foxglove.LocationFix";
             } break;
 
             case FOXDBG_CHANNEL_TYPE_FLOAT:
@@ -1088,6 +1099,57 @@ static void send_transform(foxdbg_channel_t *channel)
         {"z", qz},
         {"w", qw}
     };
+
+    std::string json_str = json_data.dump();
+    size_t json_len = json_str.length();
+
+    if (json_len + LWS_PRE + 13 < sizeof(tx_buffer))
+    {
+        memcpy(tx_buffer + LWS_PRE + 13, json_str.c_str(), json_len);
+
+        send_buffer(
+            (uint8_t*)tx_buffer + LWS_PRE, 
+            tx_buffer_size, 
+            json_len + 13,
+            subscription_id
+        );
+    }
+}
+
+static void send_location(foxdbg_channel_t *channel)
+{
+    void *data;
+    size_t data_size;
+    foxdbg_buffer_begin_read(channel->data_buffer, &data, &data_size);
+
+    if (data_size <= sizeof(raw_data_buffer) && data_size == sizeof(foxdbg_location_t))
+    {
+        memcpy(raw_data_buffer, data, data_size);
+        foxdbg_buffer_end_read(channel->data_buffer);
+    }
+    else 
+    {
+        foxdbg_buffer_end_read(channel->data_buffer);
+        return;
+    }
+
+    int subscription_id = ATOMIC_READ_INT(&channel->subscription_id);
+
+    foxdbg_location_t *location = (foxdbg_location_t*)raw_data_buffer;
+
+    json json_data = {
+        {"timestamp", {
+            {"sec", location->timestamp_sec},
+            {"nsec", location->timestamp_nsec}
+        }},
+        {"frame_id", "world"},
+        {"latitude", location->latitude},
+        {"longitude", location->longitude},
+        {"altitude", location->altitude}
+    };
+
+    json_data["position_covariance"] = std::vector<double>(9, 0.0);
+    json_data["position_covariance_type"] = 0;
 
     std::string json_str = json_data.dump();
     size_t json_len = json_str.length();

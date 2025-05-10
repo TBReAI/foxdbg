@@ -96,6 +96,11 @@ int foxdbg_add_channel(const char *topic_name, foxdbg_channel_type_t channel_typ
             payload_size = sizeof(foxdbg_transform_t);
         } break;
 
+        case FOXDBG_CHANNEL_TYPE_LOCATION:
+        {
+            payload_size = sizeof(foxdbg_location_t);
+        } break;
+
         case FOXDBG_CHANNEL_TYPE_FLOAT:
         {
             payload_size = sizeof(float);

@@ -89,6 +89,15 @@ typedef struct
     float thickness;
 } foxdbg_line_t;
 
+typedef struct
+{
+    uint32_t timestamp_sec;
+    uint32_t timestamp_nsec;
+    double latitude;
+    double longitude;
+    double altitude;
+} foxdbg_location_t;
+ 
 typedef enum
 {
     FOXDBG_CHANNEL_TYPE_IMAGE,
@@ -97,6 +106,7 @@ typedef enum
     FOXDBG_CHANNEL_TYPE_LINES,
     FOXDBG_CHANNEL_TYPE_POSE,
     FOXDBG_CHANNEL_TYPE_TRANSFORM,
+    FOXDBG_CHANNEL_TYPE_LOCATION,
     FOXDBG_CHANNEL_TYPE_FLOAT,
     FOXDBG_CHANNEL_TYPE_INTEGER,
     FOXDBG_CHANNEL_TYPE_BOOLEAN
