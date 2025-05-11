@@ -810,9 +810,31 @@ static void send_cubes(foxdbg_channel_t *channel)
             {"y", cube.position.y},
             {"z", cube.position.z}
         };
+
+        float pitch = cube.orientation.x;
+        float roll = cube.orientation.y;
+        float yaw = cube.orientation.z + M_PI/2.0f;  // <-- Adjust yaw by +90 degrees (important!)
+        
+        float cy = cos(yaw * 0.5f);
+        float sy = sin(yaw * 0.5f);
+        float cp = cos(pitch * 0.5f);
+        float sp = sin(pitch * 0.5f);
+        float cr = cos(roll * 0.5f);
+        float sr = sin(roll * 0.5f);
+        
+        // Standard XYZ euler to quaternion (for Foxglove arrow)
+        float qx = sr * cp * cy - cr * sp * sy;
+        float qy = cr * sp * cy + sr * cp * sy;
+        float qz = cr * cp * sy - sr * sp * cy;
+        float qw = cr * cp * cy + sr * sp * sy;    
+
         cube_object["pose"]["orientation"] = {
-            {"x", 0.0f}, {"y", 0.0f}, {"z", 0.0f}, {"w", 1.0f}
+            {"x", qx},
+            {"y", qy},
+            {"z", qz},
+            {"w", qw}
         };
+        
         cube_object["size"] = {
             {"x", cube.size.x},
             {"y", cube.size.y},
