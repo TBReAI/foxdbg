@@ -35,9 +35,15 @@
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
+#define PRIORITY_LOW        (1U)
+#define PRIORITY_NORMAL     (2U)
+#define PRIORITY_HIGH       (3U)
+#define PRIORITY_CRITICAL   (4U)
+
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
+
 
 /***************************************************************
 ** MARK: STATIC FUNCTION DEFS
@@ -47,6 +53,10 @@ static int foxdbg_server_thread_main();
 static int foxdbg_encoder_thread_main();
 
 static int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
+
+static size_t get_core_count(void);
+static void set_core(size_t core_id);
+static void set_thread_priority(int priority);
 
 /***************************************************************
 ** MARK: STATIC VARIABLES
@@ -112,6 +122,9 @@ void foxdbg_thread_shutdown(void)
 int foxdbg_server_thread_main() 
 {
 
+    set_core(1);  // Set to core 0
+    set_thread_priority(PRIORITY_HIGH);
+
     struct lws_context_creation_info info = { 0 };
 
     info.port = FOXDBG_PORT;                /* Port to listen on */
@@ -134,7 +147,6 @@ int foxdbg_server_thread_main()
     while (running.load()) 
     {
         lws_service(context, 0);
-        YIELD_CPU();
     }
 
     foxdbg_protocol_shutdown();
@@ -190,3 +202,133 @@ static int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason,
 
     return 0;
 }
+
+
+#ifdef WIN32
+    static size_t get_core_count() 
+    {
+        SYSTEM_INFO sysinfo;
+        GetSystemInfo(&sysinfo);
+        return sysinfo.dwNumberOfProcessors;
+    }
+
+    static void set_core(size_t core_id) 
+    {
+        SetThreadAffinityMask(GetCurrentThread(), (DWORD_PTR)(1 << core_id));
+        printf("SET AFFINITY TO %zu\n", core_id);
+    }
+
+    static void set_thread_priority(int priority)
+    {
+        int win_priority;
+        HANDLE thread = GetCurrentThread();
+
+        switch (priority) 
+        {
+            case PRIORITY_LOW:
+            {
+                win_priority = THREAD_PRIORITY_BELOW_NORMAL;
+            } break;
+                
+            case PRIORITY_NORMAL:
+            {
+                win_priority = THREAD_PRIORITY_NORMAL;
+            } break;
+            
+            case PRIORITY_HIGH:
+            {
+                win_priority = THREAD_PRIORITY_ABOVE_NORMAL;
+            } break;
+            
+            case PRIORITY_CRITICAL:
+            {
+                win_priority = THREAD_PRIORITY_HIGHEST;
+            } break;
+                
+            default:
+            {
+                win_priority = THREAD_PRIORITY_NORMAL;
+            } break;
+        }
+
+        if (!SetThreadPriority(thread, win_priority)) 
+        {
+            fprintf(stderr, "Failed to set thread priority. Error: %d\n", GetLastError());
+        } 
+        else 
+        {
+            printf("Set thread priority (Windows) to %d\n", win_priority);
+        }
+    }
+
+#else
+
+    static size_t get_core_count() 
+    {
+        struct sysinfo info;
+        sysinfo(&info);
+        return info.procs;
+    }
+
+    static void set_core(size_t core_id) 
+    {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(core_id, &cpuset);
+
+        sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+        printf("SET AFFINITY TO %zu\n", core_id);
+    }
+
+    static void set_thread_priority(int priority)
+    {
+        struct sched_param sched;
+        int policy = SCHED_RR;
+        int posix_priority;
+
+        pthread_t this_thread = pthread_self();
+
+        int min_priority = sched_get_priority_min(policy);
+        int max_priority = sched_get_priority_max(policy);
+
+        switch (priority) 
+        {
+            case PRIORITY_LOW:
+            {
+                posix_priority = min_priority;
+            } break;
+            
+            case PRIORITY_NORMAL:
+            {
+                posix_priority = (min_priority + max_priority) / 2;
+            } break;
+                
+            case PRIORITY_HIGH:
+            {
+                posix_priority = max_priority - 10;
+            } break;
+                
+            case PRIORITY_CRITICAL:
+            {
+                posix_priority = max_priority;
+            } break;
+
+            default:
+            {
+                posix_priority = (min_priority + max_priority) / 2;
+            } break;
+        }
+
+        sched.sched_priority = posix_priority;
+
+        if (pthread_setschedparam(this_thread, policy, &sched) != 0) 
+        {
+            perror("pthread_setschedparam");
+            fprintf(stderr, "You might need elevated privileges to set real-time priority.\n");
+        }
+        else 
+        {
+            printf("Set thread priority (POSIX) to %d with policy SCHED_RR\n", posix_priority);
+        }
+    }
+#endif
