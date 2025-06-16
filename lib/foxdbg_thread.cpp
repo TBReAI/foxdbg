@@ -30,6 +30,17 @@
 #include <thread>
 #include <atomic>
 
+#ifdef WIN32
+    #include <windows.h>
+    #include <process.h>
+#else
+    #include <pthread.h>
+    #include <sched.h>
+    #include <unistd.h>
+    #include <sys/sysinfo.h>
+#endif
+
+
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
