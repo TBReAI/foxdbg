@@ -35,6 +35,11 @@ target_link_libraries(foxdbg PRIVATE
     ${FOXDBG_LIBS}
 )
 
+if(UNIX AND NOT APPLE)
+    target_link_options(foxdbg PRIVATE -rdynamic)
+endif()
+
+
 target_include_directories(foxdbg PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/libwebsockets/include
