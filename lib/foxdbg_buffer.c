@@ -147,12 +147,14 @@ void foxdbg_buffer_free(foxdbg_buffer_t* buffer)
 void foxdbg_buffer_begin_write(foxdbg_buffer_t* buffer, void **data, size_t *size)
 {
 #ifdef _WIN32
+    // Acquire the swap_mutex to ensure no buffer swap is in progress
     WaitForSingleObject(buffer->swap_mutex, INFINITE);
-    ReleaseMutex(buffer->swap_mutex); // Release immediately, just to ensure no one else is in swap
+    // Acquire the write_mutex to ensure exclusive write access
     WaitForSingleObject(buffer->write_mutex, INFINITE);
 #else
+    // Acquire the swap_mutex to ensure no buffer swap is in progress
     pthread_mutex_lock(&buffer->swap_mutex);
-    pthread_mutex_unlock(&buffer->swap_mutex); // Release immediately, just to ensure no one else is in swap
+    // Acquire the write_mutex to ensure exclusive write access
     pthread_mutex_lock(&buffer->write_mutex);
 #endif
 
@@ -165,9 +167,15 @@ void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer, size_t populated_size)
     buffer->back_buffer_size = populated_size;
 
 #ifdef _WIN32
+    // Release the write_mutex
     ReleaseMutex(buffer->write_mutex);
+    // Release the swap_mutex
+    ReleaseMutex(buffer->swap_mutex);
 #else
+    // Release the write_mutex
     pthread_mutex_unlock(&buffer->write_mutex);
+    // Release the swap_mutex
+    pthread_mutex_unlock(&buffer->swap_mutex);
 #endif
 
     swap_buffers(buffer);
@@ -176,12 +184,14 @@ void foxdbg_buffer_end_write(foxdbg_buffer_t* buffer, size_t populated_size)
 void foxdbg_buffer_begin_read(foxdbg_buffer_t* buffer, void **data, size_t *size)
 {
 #ifdef _WIN32
+    // Acquire the swap_mutex to ensure no buffer swap is in progress
     WaitForSingleObject(buffer->swap_mutex, INFINITE);
-    ReleaseMutex(buffer->swap_mutex); // Release immediately, just to ensure no one else is in swap
+    // Acquire the read_mutex to ensure exclusive read access
     WaitForSingleObject(buffer->read_mutex, INFINITE);
 #else
+    // Acquire the swap_mutex to ensure no buffer swap is in progress
     pthread_mutex_lock(&buffer->swap_mutex);
-    pthread_mutex_unlock(&buffer->swap_mutex); // Release immediately, just to ensure no one else is in swap
+    // Acquire the read_mutex to ensure exclusive read access
     pthread_mutex_lock(&buffer->read_mutex);
 #endif
 
@@ -192,9 +202,15 @@ void foxdbg_buffer_begin_read(foxdbg_buffer_t* buffer, void **data, size_t *size
 void foxdbg_buffer_end_read(foxdbg_buffer_t* buffer)
 {
 #ifdef _WIN32
+    // Release the read_mutex
     ReleaseMutex(buffer->read_mutex);
+    // Release the swap_mutex
+    ReleaseMutex(buffer->swap_mutex);
 #else
+    // Release the read_mutex
     pthread_mutex_unlock(&buffer->read_mutex);
+    // Release the swap_mutex
+    pthread_mutex_unlock(&buffer->swap_mutex);
 #endif
 }
 
@@ -204,13 +220,19 @@ void foxdbg_buffer_end_read(foxdbg_buffer_t* buffer)
 
 static void swap_buffers(foxdbg_buffer_t* buffer)
 {
+    // All locks are already acquired by the calling `_end_write` or `_end_read` functions
+    // (indirectly, as swap_buffers is called after releasing mutexes in end_write.
+    // The explicit lock acquisition below ensures this order, or it will wait for them if held by other threads)
+
 #ifdef _WIN32
-    // Acquire all locks
+    // Acquire all locks before swapping to ensure atomicity
+    // This order is critical to prevent deadlocks: always acquire in the same order
     WaitForSingleObject(buffer->swap_mutex, INFINITE);
     WaitForSingleObject(buffer->read_mutex, INFINITE);
     WaitForSingleObject(buffer->write_mutex, INFINITE);
 #else
-    // Acquire all locks
+    // Acquire all locks before swapping to ensure atomicity
+    // This order is critical to prevent deadlocks: always acquire in the same order
     pthread_mutex_lock(&buffer->swap_mutex);
     pthread_mutex_lock(&buffer->read_mutex);
     pthread_mutex_lock(&buffer->write_mutex);
@@ -226,12 +248,12 @@ static void swap_buffers(foxdbg_buffer_t* buffer)
     buffer->back_buffer_size = tmp_size;
 
 #ifdef _WIN32
-    // Release all locks
+    // Release all locks in reverse order
     ReleaseMutex(buffer->write_mutex);
     ReleaseMutex(buffer->read_mutex);
     ReleaseMutex(buffer->swap_mutex);
 #else
-    // Release all locks
+    // Release all locks in reverse order
     pthread_mutex_unlock(&buffer->write_mutex);
     pthread_mutex_unlock(&buffer->read_mutex);
     pthread_mutex_unlock(&buffer->swap_mutex);
