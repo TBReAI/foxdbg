@@ -22,6 +22,10 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
