@@ -14,6 +14,7 @@
 /***************************************************************
 ** MARK: INCLUDES
 ***************************************************************/
+#define _CRT_SECURE_NO_WARNINGS 
 
 #include "foxdbg.h"
 #include "foxdbg_protocol.h"
@@ -813,7 +814,7 @@ static void send_cubes(foxdbg_channel_t *channel)
 
         float pitch = cube.orientation.x;
         float roll = cube.orientation.y;
-        float yaw = cube.orientation.z + M_PI/2.0f;  // <-- Adjust yaw by +90 degrees (important!)
+        float yaw = cube.orientation.z + (float)M_PI/2.0f;  // <-- Adjust yaw by +90 degrees (important!)
         
         float cy = cos(yaw * 0.5f);
         float sy = sin(yaw * 0.5f);
@@ -1000,7 +1001,7 @@ static void send_pose(foxdbg_channel_t *channel)
 
     float pitch = pose.orientation.x;
     float roll = pose.orientation.y;
-    float yaw = pose.orientation.z + M_PI/2.0f;  // <-- Adjust yaw by +90 degrees (important!)
+    float yaw = pose.orientation.z + (float)M_PI/2.0f;  // <-- Adjust yaw by +90 degrees (important!)
     
     float cy = cos(yaw * 0.5f);
     float sy = sin(yaw * 0.5f);
