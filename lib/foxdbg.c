@@ -57,12 +57,21 @@ void foxdbg_init()
     rx_channels = NULL;
     rx_channel_count = 0;
 
+    #ifndef WIN32
+        return;
+    #endif
+
     foxdbg_thread_init(&channels, &channel_count);
 }
 
 
 void foxdbg_shutdown(void)
 {
+
+    #ifndef WIN32
+        return;
+    #endif
+
     foxdbg_thread_shutdown();
 }
 
@@ -288,6 +297,11 @@ int foxdbg_get_rx_channel(const char *topic_name)
 
 void foxdbg_write_channel(int channel_id, const void *data, size_t size)
 {
+
+    #ifndef WIN32
+        return;
+    #endif
+
     foxdbg_channel_t *current = channels;
 
     while (current)
@@ -319,6 +333,11 @@ void foxdbg_write_channel(int channel_id, const void *data, size_t size)
 
 void foxdbg_write_channel_info(int channel_id, const void *data, size_t size)
 {
+
+    #ifndef WIN32
+        return;
+    #endif
+
     foxdbg_channel_t *current = channels;
 
     while (current)
