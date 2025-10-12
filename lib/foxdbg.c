@@ -18,6 +18,7 @@
 #include "foxdbg.h"
 #include "foxdbg_thread.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,7 +58,12 @@ void foxdbg_init()
     rx_channels = NULL;
     rx_channel_count = 0;
 
-    #ifndef WIN32
+    #ifdef FOXDBG_DISABLED
+        static bool disabled_message_printed = false;
+        if (!disabled_message_printed) {
+            printf("Foxglove debugging is disabled.\n");
+            disabled_message_printed = true;
+        }
         return;
     #endif
 
@@ -68,7 +74,7 @@ void foxdbg_init()
 void foxdbg_shutdown(void)
 {
 
-    #ifndef WIN32
+    #ifdef FOXDBG_DISABLED
         return;
     #endif
 
@@ -298,7 +304,7 @@ int foxdbg_get_rx_channel(const char *topic_name)
 void foxdbg_write_channel(int channel_id, const void *data, size_t size)
 {
 
-    #ifndef WIN32
+    #ifdef FOXDBG_DISABLED
         return;
     #endif
 
@@ -334,7 +340,7 @@ void foxdbg_write_channel(int channel_id, const void *data, size_t size)
 void foxdbg_write_channel_info(int channel_id, const void *data, size_t size)
 {
 
-    #ifndef WIN32
+    #ifdef FOXDBG_DISABLED
         return;
     #endif
 

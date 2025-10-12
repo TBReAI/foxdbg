@@ -7,6 +7,7 @@ project(foxdbg)
 add_subdirectory(extern)
 
 option(FOXDBG_BUILD_TESTS "Build tests" OFF)
+option(FOXDBG_DISABLED "Disable foxglove debugging" OFF)
 
 add_library(foxdbg STATIC
     lib/foxdbg.c
@@ -15,6 +16,10 @@ add_library(foxdbg STATIC
     lib/foxdbg_thread.cpp
     lib/foxdbg_protocol.cpp
 )
+
+if(FOXDBG_DISABLED)
+    target_compile_definitions(foxdbg PRIVATE FOXDBG_DISABLED)
+endif()
 
 add_dependencies(foxdbg libjpeg-turbo)
 
