@@ -18,7 +18,6 @@
 #include "foxdbg.h"
 #include "foxdbg_thread.h"
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,11 +58,7 @@ void foxdbg_init()
     rx_channel_count = 0;
 
     #ifdef FOXDBG_DISABLED
-        static bool disabled_message_printed = false;
-        if (!disabled_message_printed) {
-            printf("Foxglove debugging is disabled.\n");
-            disabled_message_printed = true;
-        }
+        printf("Foxglove debugging is disabled.\n");
         return;
     #endif
 
