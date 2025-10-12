@@ -31,13 +31,22 @@
 #include <atomic>
 
 #ifdef WIN32
-    #include <windows.h>
-    #include <process.h>
+  #include <windows.h>
+  #include <process.h>
 #else
-    #include <pthread.h>
-    #include <sched.h>
-    #include <unistd.h>
+  #include <pthread.h>
+  #include <sched.h>
+  #include <unistd.h>
+
+  #if defined(__APPLE__)
+    #include <sys/types.h>
+    #include <sys/sysctl.h>
+    // If you later want true CPU affinity on macOS, you’ll need mach headers:
+    // #include <mach/mach.h>
+    // #include <mach/thread_policy.h>
+  #else
     #include <sys/sysinfo.h>
+  #endif
 #endif
 
 
@@ -270,6 +279,36 @@ static int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason,
         {
             printf("Set thread priority (Windows) to %d\n", win_priority);
         }
+    }
+
+
+
+#elif defined(__APPLE__)
+
+    static size_t get_core_count()
+    {
+      int ncpu = 1;
+      size_t sz = sizeof(ncpu);
+      if (sysctlbyname("hw.ncpu", &ncpu, &sz, nullptr, 0) != 0 || ncpu <= 0) {
+        ncpu = 1;
+      }
+      return static_cast<size_t>(ncpu);
+    }
+
+    static void set_core(size_t /*core_id*/)
+    {
+      // CPU affinity is not officially supported on macOS for user processes.
+      // No-op for portability; remove if you later add Mach thread affinity.
+      // (Leaving this as a no-op avoids compile errors & undefined behavior.)
+    }
+
+    static void set_thread_priority(int /*priority*/)
+    {
+      // Use a conservative, portable policy on macOS.
+      // Real-time priorities typically require entitlements.
+      struct sched_param sp{};
+      sp.sched_priority = 0;
+      pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
     }
 
 #else

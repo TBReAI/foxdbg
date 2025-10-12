@@ -28,6 +28,14 @@ if (WIN32)
         websockets
         ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/turbojpeg-static.lib
     )
+
+elseif(APPLE)
+    # macOS: libraries live under lib/, not lib64/
+    set(FOXDBG_LIBS 
+        websockets
+        ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/libjpeg.a
+        ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/libturbojpeg.a
+    )
 else()
     set(FOXDBG_LIBS 
         websockets
