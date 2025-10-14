@@ -30,7 +30,7 @@
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
-#define LARGE_BUFFER_SIZE (1024*1024) /* 1MB buffer */
+#define LARGE_BUFFER_SIZE (10*1024*1024) /* 10MB buffer */
 
 /***************************************************************
 ** MARK: TYPEDEFS
